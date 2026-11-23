@@ -18,7 +18,7 @@ Decision: the owner's own maintainer agent, running on the owner's computer, may
   - release and signing configuration;
   - database migrations.
 
-Merges are squash merges. The agent checks the merge commit's author: the owner's own commits must carry the owner's GitHub noreply address, and a contributor's commit must carry that contributor's own address.
+Merges are squash merges. The agent checks the merge commit's author: the owner's own pull requests must carry the address the owner chose for merges, and a contributor's pull request must carry that contributor's own address.
 
 ## The owner's AI-made pull requests
 
