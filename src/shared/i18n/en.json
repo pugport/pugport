@@ -6311,6 +6311,7 @@
   "这台电脑": "This computer",
   "这台电脑上没找到": "Not found on this computer: ",
   "这台电脑上没找到 Cursor": "Cursor wasn't found on this computer",
+  "这台电脑上没有找到 Grok Bot 桌面应用，回复送不回来。请先安装 Grok Bot 再重试。": "The Grok Bot desktop app isn't installed on this computer, so replies can't reach you. Install Grok Bot and retry.",
   "这台电脑同时最多运行": "This computer runs at most",
   "这台电脑同时最多运行 {0} 个执行器（按内存和处理器估算），等前面的结束后自动开始。": "This computer runs at most {0} executors at once (estimated from memory and processor); it starts automatically when earlier ones finish.",
   "这台电脑的系统不支持移到回收站。": "This computer's system can't move items to the Recycle Bin.",
