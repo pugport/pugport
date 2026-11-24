@@ -38,7 +38,12 @@ import {
   webQuotaSchema,
 } from './usage.ts';
 import { desktopWebBridge, type WebBridge } from './web-bridge-client.ts';
-import { fetchGrokBotUsage, readCursorEditorSession, type CursorEditorSession } from '../cursor-usage.ts';
+import {
+  cursorIdentityHash,
+  fetchGrokBotUsage,
+  readCursorEditorSession,
+  type CursorEditorSession,
+} from '../cursor-usage.ts';
 
 export type ExternalAgentsOptions = {
   routineStore?: GrokRoutineStore;
@@ -65,6 +70,8 @@ export type ExternalAgentPatch = {
   botId?: string;
   usageEnabled?: boolean;
   usageSource?: 'separate' | 'cursor-editor';
+  /** Confirms the account behind the reading the user saw; any other value is refused. */
+  usageAccountConfirmed?: string;
 };
 
 const hour = 3_600_000;
@@ -146,6 +153,8 @@ export class ExternalAgents {
   private grokDiagnostic?: ExternalAgentView['grokDiagnostic'];
   private grokBridgeResult = '';
   private grokQuota?: ExternalAgentView['quota'];
+  /** Hash of the account behind `grokQuota`, when its usage source reports one. */
+  private grokAccount?: string;
   private grokReading?: Promise<void>;
   private grokController?: AbortController;
   constructor(
@@ -213,6 +222,21 @@ export class ExternalAgents {
         botId: saved.botId ?? '',
         usageEnabled: saved.usageEnabled,
         usageSource: saved.usageSource ?? 'separate',
+        ...(saved.usageEnabled && this.grokQuota?.status === 'known'
+          ? {
+              usageAccount: !this.grokAccount
+                ? { status: 'unverified' as const }
+                : {
+                    status:
+                      saved.usageAccountConfirmed === this.grokAccount
+                        ? ('matches' as const)
+                        : saved.usageAccountConfirmed
+                          ? ('different' as const)
+                          : ('unverified' as const),
+                    fingerprint: this.grokAccount,
+                  },
+            }
+          : {}),
         quota: saved.usageEnabled
           ? (this.grokQuota ?? {
               status: 'unknown',
@@ -277,6 +301,11 @@ export class ExternalAgents {
     const usageSourceChanged =
       patch.usageSource !== undefined && patch.usageSource !== (saved.usageSource ?? 'separate');
     const usageEnabledChanged = patch.usageEnabled !== undefined && patch.usageEnabled !== saved.usageEnabled;
+    if (patch.usageAccountConfirmed !== undefined) {
+      if (usageSourceChanged || patch.usageAccountConfirmed !== this.view(id).usageAccount?.fingerprint)
+        throw new Error('用量账号已变化，请看过新的读数后再确认。');
+      next.usageAccountConfirmed = patch.usageAccountConfirmed;
+    }
     if (patch.botId !== undefined) {
       if (id !== 'grok-bot') throw new Error('这个智能体没有 Bot ID。');
       const botId = patch.botId.trim();
@@ -288,6 +317,7 @@ export class ExternalAgents {
         throw new Error('用量来源无效。');
       next.usageSource = patch.usageSource;
       if (usageSourceChanged) {
+        next.usageAccountConfirmed = undefined;
         next.grokDiagnostic = undefined;
         this.grokController?.abort();
         this.grokQuota = undefined;
@@ -881,6 +911,7 @@ export class ExternalAgents {
       );
     this.grokDiagnostic = diagnostic;
     this.grokQuota = quota;
+    this.grokAccount = undefined; // The separate login's reading carries no account identity.
     if (result.ok) this.usageCheckedAt.set('grok-bot', this.now());
     if (changed) this.workspace.controller.broadcast();
   }
@@ -970,6 +1001,7 @@ export class ExternalAgents {
             this.config.agent('grok-bot').usageEnabled
           ) {
             this.grokQuota = quota;
+            this.grokAccount = session && cursorIdentityHash(session.userId);
             this.workspace.controller.broadcast();
           }
         };
@@ -1632,7 +1664,13 @@ export class ExternalAgents {
         .request({ action: 'open', agentId: grokBotUsageAgentId, name: view.name, url: grokBotUsagePage }, 60_000)
         .catch((): WebAgentResult => ({ ok: false }));
       if (!result.ok) throw new Error('没能打开用量登录窗口。');
-      this.config.update(id, { added: true, usageLoginCreated: true, usageSource: 'separate', usageEnabled: true });
+      this.config.update(id, {
+        added: true,
+        usageLoginCreated: true,
+        usageSource: 'separate',
+        usageEnabled: true,
+        usageAccountConfirmed: undefined,
+      });
       this.grokController?.abort();
       this.grokQuota = undefined;
       this.grokDiagnostic = undefined;

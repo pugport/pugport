@@ -48,6 +48,10 @@ export function externalAgentRoutes(app: Express, agents: ExternalAgents, listen
         botId: z.string().max(200).optional(),
         usageEnabled: z.boolean().optional(),
         usageSource: z.enum(['separate', 'cursor-editor']).optional(),
+        usageAccountConfirmed: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .optional(),
         acceptRisk: z.literal(true).optional(),
         url: z.string().max(2000).optional(),
         usageUrl: z.string().max(2000).optional(),

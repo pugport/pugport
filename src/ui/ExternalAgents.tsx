@@ -1,6 +1,13 @@
 import { currentLocale } from './i18n';
 import { ExecutorActivity } from './ExecutorActivity';
-import { grokDiagnosticLine, grokDiagnosticMessages, grokUsageHint, grokPlanMismatch } from '../shared/grok-usage';
+import {
+  grokDiagnosticLine,
+  grokDiagnosticMessages,
+  grokUsageAccountLine,
+  grokUsageHint,
+  grokPlanMismatch,
+  type GrokUsageAccount,
+} from '../shared/grok-usage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ClipboardCopy,
@@ -435,6 +442,13 @@ export function GrokBotControls({
           <option value="cursor-editor">Cursor 编辑器登录</option>
         </select>
       </label>
+      {agent.usageAccount && (
+        <GrokUsageAccountNote
+          account={agent.usageAccount}
+          disabled={busy}
+          onConfirm={onPatch && (() => onPatch({ usageAccountConfirmed: agent.usageAccount!.fingerprint }))}
+        />
+      )}
       <label className="quota-note">
         <input
           type="checkbox"
@@ -445,6 +459,28 @@ export function GrokBotControls({
         读取 Grok Bot 用量
       </label>
     </div>
+  );
+}
+
+/** The usage account's status; an identified account that isn't confirmed yet can be confirmed here. */
+function GrokUsageAccountNote({
+  account,
+  disabled,
+  onConfirm,
+}: {
+  account: GrokUsageAccount;
+  disabled?: boolean;
+  onConfirm?: () => void;
+}) {
+  return (
+    <p className={account.status === 'different' ? 'quota-note usage-error' : 'quota-note'}>
+      {grokUsageAccountLine(account)}{' '}
+      {account.fingerprint && account.status !== 'matches' && (
+        <button type="button" className="button secondary tiny" disabled={disabled || !onConfirm} onClick={onConfirm}>
+          这是我在 Grok Bot 里用的账号
+        </button>
+      )}
+    </p>
   );
 }
 
@@ -561,6 +597,7 @@ export function WebAgentQuotaRows({
   busy,
   compact = false,
   onLogin,
+  onConfirmAccount,
 }: {
   agents: ExternalAgentView[];
   now: number;
@@ -568,6 +605,7 @@ export function WebAgentQuotaRows({
   busy?: boolean;
   compact?: boolean;
   onLogin?: (agent: ExternalAgentView) => void;
+  onConfirmAccount?: (agent: ExternalAgentView) => void;
 }) {
   const usageAgents = agents.filter(
     (agent) => agent.added !== false && (agent.kind === 'web' || agent.id === 'grok-bot'),
@@ -645,6 +683,7 @@ export function WebAgentQuotaRows({
           !desktop && agent.quota?.status === 'error' ? agent.quota.note || '额度读取失败' : undefined,
           cooldown?.reason,
           !desktop && !agent.available ? agent.reason : undefined,
+          compact && agent.usageAccount?.status === 'different' ? grokUsageAccountLine(agent.usageAccount) : undefined,
         ].filter(Boolean);
         const loginAction = desktop && (
           <button
@@ -712,6 +751,13 @@ export function WebAgentQuotaRows({
                   {desktop && (
                     <>
                       <p className="quota-note">{grokUsageHint}</p>
+                      {agent.usageAccount && (
+                        <GrokUsageAccountNote
+                          account={agent.usageAccount}
+                          disabled={busy}
+                          onConfirm={onConfirmAccount && (() => onConfirmAccount(agent))}
+                        />
+                      )}
                       {agent.quota?.status === 'known' &&
                         agent.quota.subscription?.label &&
                         !/^SuperGrok/i.test(agent.quota.subscription.label) &&
@@ -839,6 +885,23 @@ export function WebAgentQuotas({
       setBusy(false);
     }
   };
+  const confirmAccount = async (agent: ExternalAgentView) => {
+    if (busy) return;
+    setBusy(true);
+    setNote('');
+    try {
+      const result = await api<AgentList>(
+        `/api/external-agents/${agent.id}`,
+        { usageAccountConfirmed: agent.usageAccount?.fingerprint },
+        'PATCH',
+      );
+      setAgents(result.agents);
+    } catch (error) {
+      setNote(failure(error));
+    } finally {
+      setBusy(false);
+    }
+  };
   const login = async (agent: ExternalAgentView) => {
     if (busy) return;
     setBusy(true);
@@ -863,6 +926,7 @@ export function WebAgentQuotas({
         busy={busy}
         compact={compact}
         onLogin={(agent) => void login(agent)}
+        onConfirmAccount={(agent) => void confirmAccount(agent)}
       />
       {note && <p role="status">{note}</p>}
     </>

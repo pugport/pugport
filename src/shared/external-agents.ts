@@ -69,6 +69,8 @@ export type ExternalAgentView = {
   botId?: string;
   usageEnabled?: boolean;
   usageSource?: 'separate' | 'cursor-editor';
+  /** Grok Bot: present with a known usage reading. */
+  usageAccount?: import('./grok-usage.ts').GrokUsageAccount;
   quota?: WebQuota;
   usageSignatures?: WebUsageSignature[];
   usageDiagnostics?: string[];
