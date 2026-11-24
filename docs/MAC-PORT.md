@@ -1,6 +1,6 @@
 # macOS desktop setup and port status
 
-Updated 2026-10-16. Current priority: **use PugPort directly on the Mac desktop**, with Apple Silicon and native arm64 Node 24 as the first validation target. The current cross-platform support table is in [PLATFORMS.md](PLATFORMS.md). The core Mac desktop path is locally verified; this does not mean every provider, native integration or release path is verified. This direction supersedes the older node-first ordering in `CROSS-PLATFORM.md`.
+Updated 2026-10-16. Release and update notes updated 2026-11-21. Current priority: **use PugPort directly on the Mac desktop**, with Apple Silicon and native arm64 Node 24 as the first validation target. The current cross-platform support table is in [PLATFORMS.md](PLATFORMS.md). The core Mac desktop path is locally verified; this does not mean every provider, native integration or release path is verified. This direction supersedes the older node-first ordering in `CROSS-PLATFORM.md`.
 
 ## 1. Current scope and evidence
 
@@ -13,7 +13,7 @@ Verified locally on an Apple Silicon Mac during this work:
 - Targeted fixtures for CLI discovery across installation/removal, POSIX reply HTTP transport, Mac menus/composer shortcuts and process-group cleanup. Final whole-suite results belong in the change's verification record; targeted checks do not imply the whole suite passes.
 - The native arm64 `.app` started to a connected workspace and passed normal/failure shutdown checks. The installed app's expanded and compact usage views showed only the three installed CLIs.
 
-Remaining acceptance includes sustained desktop use, native integrations and other provider/account combinations. The Windows behavior has fixture coverage in this round but **has not been retested on a Windows computer**. No signed/notarized release, DMG, automatic updater or broad macOS support claim is established here.
+Remaining acceptance includes sustained desktop use, native integrations and other provider/account combinations. The Windows behavior has fixture coverage in this round but **has not been retested on a Windows computer**. No broad macOS support claim is established here; Apple Silicon releases are ad-hoc signed and self-update from the signed feed, and no notarization has been performed, as recorded in [PLATFORMS.md](PLATFORMS.md) and [Mac releases](RELEASING-MAC.md).
 
 ## 2. Design decisions
 
@@ -63,7 +63,7 @@ npm run package:desktop
 
 The default target is the current Mac architecture. Apple Silicon outputs `release/PugPort-darwin-arm64/PugPort.app`; Intel outputs `release/PugPort-darwin-x64/PugPort.app` and requires a native Intel build. Copy the complete `.app`, which includes the runtime and license files. The packaging code understands `.app/Contents/Resources`, keeps target-native dependencies and generates an ICNS icon from the existing brand asset.
 
-This is an **unsigned local validation bundle**. Signing/notarization identities, distribution, DMG creation and auto-update are deferred; no signing credentials are required for this local build. Do not count a successful packaging command as desktop runtime acceptance. Follow the package's license checks before sharing a build.
+This is an **unsigned local validation bundle**. Release builds are made by `scripts/release-mac.mjs`, which ad-hoc signs them (`codesign --force --deep --sign -`) and uses no identity, with no Developer ID or notarization; the release builds self-update from the signed feed. No signing credentials are required for this local build. Do not count a successful packaging command as desktop runtime acceptance. Follow the package's license checks before sharing a build. See [Mac releases](RELEASING-MAC.md) for the release and update path.
 
 ## 4. Validation and remaining work
 
@@ -74,7 +74,7 @@ This is an **unsigned local validation bundle**. Signing/notarization identities
 | Desktop | Mac menus, Cmd shortcuts, deep-link handling, tray/popup changes and POSIX file links | Cold-start deep links, IME, clipboard, multiple displays/Spaces, sleep/lock/resume, sustained tray use |
 | Accounts | Existing local CLI identities, real Claude quota metadata, explicit provider errors and managed Terminal login with isolated profile directories | Completing sign-in with a second identity for each provider, including Keychain behavior |
 | Files and system integration | Existing Trash, reveal, keep-awake and telemetry branches | External disks, case-sensitive APFS, permissions, Trash restore, login items and unsupported telemetry fallbacks |
-| Packaging | Native arm64/x64 targets and `.app` layout/license checks | Intel runtime validation; signed/notarized distribution and updater design |
+| Packaging | Native arm64/x64 targets and `.app` layout/license checks; ad-hoc signed Apple Silicon release and signed update feed | Intel runtime validation; no notarization and no Intel desktop acceptance |
 | Device node | Existing peer/service foundations; plan retained below | macOS LaunchAgent lifecycle, writable folder policy, transfers and cross-device acceptance |
 | Grok Bot routine | Before a routine is sent, the running app is found by bundle id with `lsappinfo`. A stopped app is opened hidden with `open -g -j -b` and waited for with the Windows limits; a missing app ends the routine as needs-user with an install note (`platform/grok-bot.ts`) | PugPort starting the real Grok Bot.app, and a full routine reply on the Mac |
 | Local model servers | Custom API context window and output limit can be set when a connection is added, on macOS only (`platform/api-limits.ts`); a local MLX server completed coding tasks through Pi with the resulting model metadata | Adding the connection in the running app and a full task through the Controller; free-source connections (Ollama, LM Studio, custom address) keep the fixed 32,768/4,096 limits |
@@ -84,7 +84,7 @@ Use guarded product tests through `npm test` or `npm run test:ci`; bare `node --
 
 1. Finish Mac desktop acceptance: startup, installed-client discovery, real tasks, cancellation, tray/windows, paths and account state. Preserve Windows behavior in shared code.
 2. Validate the native local `.app`; complete remaining provider and platform checks with explicit scope and evidence.
-3. Resume the deferred node plan below when requested. Signing, notarization and auto-update need their own design and authorization.
+3. Historical: the deferred node plan below resumes when requested; ad-hoc signing and the signed-feed automatic update have since shipped for Apple Silicon releases, while Developer ID signing and notarization have not, and Intel desktop acceptance remains open.
 
 ## 6. Device folders and files
 
@@ -109,7 +109,7 @@ Synthetic Windows tests do not establish Mac service or Tailscale acceptance. Ve
 - Large steady and interrupted transfers in both directions, unique saved names and disk-space refusal.
 - macOS Trash, deep links, menu-bar/Dock, shortcuts/Chinese IME and display behavior for desktop parity.
 
-Full ordered log transport, Docker build tooling, approval relay, signing/notarization, auto-update and pre-login operation are separate work. They do not gate paired-device file tasks.
+Full ordered log transport, Docker build tooling, approval relay, Developer ID signing, notarization and pre-login operation are separate work; the signed-feed automatic update has shipped for Apple Silicon releases, and remaining Intel validation remains open. They do not gate paired-device file tasks.
 
 ## 8. Rules for future Windows-side work
 

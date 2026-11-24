@@ -1,14 +1,16 @@
 # macOS and Linux: plan
 
-Status: plan updated 2026-10-21 with optional device folders, full-access writes and file transfers; hardware acceptance remains separate. The original audit was 2026-10-10. PugPort ships for Windows today; a macOS desktop and Linux/macOS headless **device nodes** are in progress (see "Device nodes" below).
+Status: historical plan updated 2026-10-21 with optional device folders, full-access writes and file transfers; hardware acceptance remains separate. The original audit was 2026-10-10. PugPort ships for Windows today; a macOS desktop and Linux/macOS headless **device nodes** are in progress (see "Device nodes" below). This plan is kept as historical notes; the shipped Windows and Mac desktop update paths are current and covered in [PLATFORMS.md](PLATFORMS.md), [RELEASING-WINDOWS.md](RELEASING-WINDOWS.md) and [RELEASING-MAC.md](RELEASING-MAC.md).
 
 ## Where things stand
 
 - **The backend already runs headless.** `node dist/server/main.js` needs no Electron, and shutdown already handles
   SIGTERM (what launchd and systemd send). The adapters already have POSIX branches (process groups, `/bin/sh`,
   X_OK checks). Most of the work is folders, file permissions, Trash, process trees and executable discovery.
-- **Packaging** is `@electron/packager` in `scripts/package.mjs`, hard-coded to win32/x64 with an `.ico`, producing a
-  portable ZIP. There is no electron-builder or NSIS.
+- **Packaging** was planned as `@electron/packager` in `scripts/package.mjs`, hard-coded to win32/x64 with an `.ico`, producing
+  a portable ZIP, with no electron-builder or NSIS. Later the Windows release moved to an electron-builder NSIS per-user
+  installer and the Mac to the ad-hoc signed release feed in `scripts/release-mac.mjs`; see [RELEASING-WINDOWS.md](RELEASING-WINDOWS.md)
+  and [RELEASING-MAC.md](RELEASING-MAC.md).
 - **CI** already runs `test:ci` on `macos-latest`, so a macOS smoke job can be added there.
 
 ## Problems found (fix before running on macOS/Linux)
@@ -192,7 +194,8 @@ folder.
     `platform/service.ts` (unit + plist); Nodes page and remote delegate executor on the main side;
     Shortcuts/AppleScript tools (Mac); choosing the Slack host.
 11. M: macOS desktop polish and packaging (dock badge, menu-bar icon, `before-quit` vs. logout, `.icns`, ad-hoc
-    signing); can wait until the move.
+    signing); can wait until the move. Historical: the ad-hoc signing step has since shipped for Apple Silicon release
+    builds through `scripts/release-mac.mjs`; see [Mac releases](RELEASING-MAC.md).
 
 ## Testing without a Mac
 
