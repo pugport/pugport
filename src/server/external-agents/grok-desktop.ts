@@ -1,25 +1,15 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { currentHost, type Host } from '../platform/host.ts';
+import { grokBotDesktopChecked, grokBotRunning } from '../platform/grok-bot.ts';
 
 export const grokDesktopRequiredNote = 'Grok Bot 桌面应用没有运行，回复送不回来。请先打开 Grok Bot 再重试。';
-
-const systemTool = (host: Host, name: string) => host.path.join(host.env.SystemRoot || 'C:\\Windows', 'System32', name);
-
-async function isRunning() {
-  const host = currentHost();
-  const { stdout } = await host.run(
-    systemTool(host, 'tasklist.exe'),
-    ['/FI', 'IMAGENAME eq Grok Bot.exe', '/FO', 'CSV', '/NH'],
-    {
-      windowsHide: true,
-      timeout: 10_000,
-    },
-  );
-  return /^"Grok Bot\.exe",/im.test(stdout);
-}
+export const grokDesktopMissingNote = '这台电脑上没有找到 Grok Bot 桌面应用，回复送不回来。请先安装 Grok Bot 再重试。';
 
 export async function ensureGrokBotRunning(
   options: {
+    /** The machine whose Grok Bot app is checked (default: this one). */
+    host?: Host;
+    /** Replaces the host's platform (tests). */
     platform?: NodeJS.Platform;
     isRunning?: () => Promise<boolean>;
     start?: () => Promise<void>;
@@ -29,8 +19,10 @@ export async function ensureGrokBotRunning(
   } = {},
 ): Promise<boolean> {
   if (options.stopped?.()) return false;
-  if ((options.platform ?? process.platform) !== 'win32') return true;
-  const running = options.isRunning ?? isRunning;
+  const machine = options.host ?? currentHost();
+  const host = options.platform ? { ...machine, platform: options.platform } : machine;
+  if (!grokBotDesktopChecked(host)) return true;
+  const running = options.isRunning ?? (() => grokBotRunning(host));
   const wait = options.sleep ?? sleep;
   const now = options.now ?? (() => performance.now());
   try {
@@ -40,8 +32,9 @@ export async function ensureGrokBotRunning(
     const deadline = now() + 20_000;
     while (now() < deadline) {
       if (options.stopped?.()) return false;
-      if (await running()) {
-        if (options.stopped?.()) return false;
+      const up = await running();
+      if (options.stopped?.()) return false;
+      if (up) {
         await wait(5000);
         if (options.stopped?.()) return false;
         return (await running()) && !options.stopped?.();

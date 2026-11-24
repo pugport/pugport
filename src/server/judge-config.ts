@@ -86,14 +86,18 @@ const verdictWords: Record<string, Exclude<JudgeVerdict, 'invalid'>> = {
   INCONCLUSIVE: 'blocked',
 };
 
-/** First non-empty line `<VERDICT> @ <sha prefix>`; the last `JUDGE:` line is returned verbatim, never trusted. */
+/**
+ * First non-empty line `<VERDICT> @ <sha prefix>`; whitespace such as spaces and tabs before and after the verdict is accepted
+ * presentation, but anything else around it makes the verdict invalid. The last `JUDGE:` line is returned verbatim,
+ * never trusted.
+ */
 export function parseVerdict(
   text: string,
   sha: string,
 ): { verdict: JudgeVerdict; firstLine: string; signature?: string } {
   const lines = text.split(/\r?\n/);
-  // The verdict word must open the line; only trailing space is forgiven.
-  const firstLine = lines.find((line) => line.trim())?.trimEnd() ?? '';
+  // The first non-empty line is trimmed, so accepted presentation whitespace never reaches the verdict.
+  const firstLine = lines.find((line) => line.trim())?.trim() ?? '';
   const match = firstLine.match(/^([A-Z][A-Z_-]{1,31})\s*@\s*([0-9a-fA-F]{7,64})\b/);
   const word = match && sha.toLowerCase().startsWith(match[2].toLowerCase()) ? verdictWords[match[1]] : undefined;
   const signature = [...lines].reverse().find((line) => /^JUDGE:\s*(.+)$/.test(line));
