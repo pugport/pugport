@@ -16,8 +16,8 @@ PugPort has one maintainer, the owner. Every pull request goes through the same 
 2. **Fork and open a pull request.** Fork the repository, branch from the current `main`, make one coherent change, and open a pull request against `main`. Fill in the template, including the checks you ran and any AI tools you used.
 3. **Agree to the CLA.** By opening a pull request you agree to the [Contributor License Agreement](../docs/CLA.md); the PR template has a checkbox for it.
 4. **A bot writes a first review.** The maintainer bot fetches your change as text, and a model with no tools writes a first review: one comment and a `pugport/judge` status. The bot does not check out, build, install, or run your code, and it cannot merge. The review is advice for you and the owner. A passing automatic review does not mean your pull request will be merged. Push a new commit for a fresh review.
-5. **The owner reads the review, then approves the checks.** For contributors without write access, GitHub holds each workflow run until the owner approves it. Only then do the Windows and macOS checks run, on GitHub's hosted machines, never on the owner's computers. Your checks can show as waiting for a while.
-6. **Only the owner merges.** Nothing merges automatically, whatever the labels, the bot, or the checks say. Pull requests that touch workflows, install or setup scripts, or dependencies always get the owner's personal review. The owner may ask for changes, and there is no fixed response time.
+5. **Your change is reviewed, then the checks are approved.** For contributors without write access, GitHub holds each workflow run until the owner, or the owner's maintainer agent after its reviews, approves it. Only then do the Windows and macOS checks run, on GitHub's hosted machines, never on the owner's computers. Your checks can show as waiting for a while.
+6. **Merging.** Labels, the bot or green checks alone never merge a PR. The owner's maintainer agent reviews each PR twice, reading the change as text only. If both reviews pass and every check is green, it may merge the PR on the owner's behalf, under [this decision](../docs/decisions/2026-11-22-scheduled-merges.md). Large or security-sensitive PRs go to the owner. Pull requests that touch workflows, install or setup scripts, or dependencies always get the owner's personal review. The owner may ask for changes, and there is no fixed response time.
 
 Accounts without write access can have at most **3** open pull requests in this repository at a time, drafts included. At the limit, GitHub lets you open another only after one of yours is merged or closed.
 
@@ -79,7 +79,7 @@ Code from contributors who are not collaborators runs only in GitHub-hosted Acti
 
 The bot only acts on structured results; text in issues and PRs never runs shell commands or instructs the bot. The only comment commands are the claim commands above, each handled by a workflow.
 
-After a few merged PRs, the owner may invite you to become a collaborator. Collaborators still work through PRs: pushes to `main` are blocked, and only the owner merges.
+After a few merged PRs, the owner may invite you to become a collaborator. Collaborators still work through PRs: pushes to `main` are blocked, and only the owner or the owner's maintainer agent merges.
 
 ## Repository layout
 
@@ -159,7 +159,7 @@ Push to a branch, in your fork if you do not have write access, and open a PR. E
 
 PR checks retain synthetic Bot-addition, custom API and conversation-settings screenshots as `ui-checks-Windows` and `ui-checks-macOS` artifacts for seven days. These are generated fixtures, not screenshots of a contributor's accounts or desktop.
 
-Before continuing on another computer, fetch the latest `main` and integrate its changes into your task branch. Keep both platforms' fixes and rerun the combined checks. Do not overwrite a branch with a copied folder or force-push shared history. The owner merges reviewed PRs. Contributors with write access should enable GitHub two-factor authentication.
+Before continuing on another computer, fetch the latest `main` and integrate its changes into your task branch. Keep both platforms' fixes and rerun the combined checks. Do not overwrite a branch with a copied folder or force-push shared history. The owner, or the owner's maintainer agent, merges reviewed PRs. Contributors with write access should enable GitHub two-factor authentication.
 
 ### Product tests
 

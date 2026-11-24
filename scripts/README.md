@@ -28,6 +28,13 @@ Default packaging excludes downloaded local components. `node scripts/package.mj
 | `verify-license-bundle.mjs` | Offline gate: checks the exact license material shipped in source/package |
 | `fetch-references.mjs` | Downloads pinned upstream source snapshots into `vendor/` for reading only |
 
+## Platform boundaries ([PLATFORMS.md](../docs/PLATFORMS.md#keeping-platform-work-apart))
+
+| Script | What it does |
+| --- | --- |
+| `platform-baseline.mjs` | `--check` compares direct platform checks in `src/` outside `src/server/platform/` with `tests/fixtures/platform-branch-baseline.json`; `--write` lowers the baseline after checks were removed |
+| `platform-paths.mjs` | Prints the platform classes and required OS checks for changed paths from stdin or arguments |
+
 ## Smoke tests with fixtures (no accounts, no model requests)
 
 | Script | What it does |
