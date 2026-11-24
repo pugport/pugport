@@ -19,6 +19,8 @@ import { WorkspaceStore } from '../src/server/workspace-store.ts';
 import { GrokHistorySyncWorker } from '../src/server/grok-history-worker-client.ts';
 import { listenForFetch } from './helpers/fetch-port.ts';
 
+const PROBE_TIMEOUT_MS = 5000;
+
 function removeFixtureDirectory(root: string) {
   const target = realpathSync.native(root);
   const temporaryRoot = realpathSync.native(tmpdir());
@@ -158,18 +160,19 @@ test('large Grok history import keeps timers and HTTP requests responsive on the
   let importing = true;
   let ticks = 0;
   let repliesWhileImporting = 0;
-  const requests: Promise<void>[] = [];
-  const timer = setInterval(() => {
-    ticks++;
-    requests.push(
-      fetch(`http://127.0.0.1:${address.port}/health`)
-        .then((response) => response.text())
-        .then((body) => {
-          assert.equal(body, 'main event loop alive');
-          if (importing) repliesWhileImporting++;
-        }),
-    );
-  }, 10);
+  const timer = setInterval(() => ticks++, 10);
+  // One probe in flight at a time: the next starts 10 ms after the previous reply. A request every 10 ms
+  // regardless of replies piles up loopback connections on a busy host and fails with "fetch failed".
+  const probe = (async () => {
+    while (importing) {
+      const body: string = await fetch(`http://127.0.0.1:${address.port}/health`, {
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      }).then((response) => response.text());
+      assert.equal(body, 'main event loop alive');
+      if (importing) repliesWhileImporting++;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  })();
   try {
     const result = await f.worker.execute(f.job);
     importing = false;
@@ -179,7 +182,8 @@ test('large Grok history import keeps timers and HTTP requests responsive on the
   } finally {
     importing = false;
     clearInterval(timer);
-    await Promise.all(requests);
+    // Settle the single in-flight probe and wait at most PROBE_TIMEOUT_MS so teardown cannot hang on a stalled reply.
+    await Promise.race([probe, new Promise<void>((resolve) => setTimeout(resolve, PROBE_TIMEOUT_MS).unref())]);
   }
 });
 
