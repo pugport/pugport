@@ -2,7 +2,7 @@
 
 Hindsight is an optional local memory service. It is **off by default**. This pilot supports retain and recall for selected projects. It does not bulk import existing history, call Reflect, enable automatic consolidation, or automatically download embedding models. PugPort's existing local memory remains available when the service cannot start or recall times out.
 
-The integration has synthetic tests. An isolated Windows run with the actual pinned service and database passed authenticated startup, retention through the real PugPort bridge with a synthetic model response, recall, bank deletion and shutdown. Startup took 70.9 seconds. No paid API or real user content was used. Real-model quality, the full desktop workflow and macOS runtime remain unverified.
+The integration has synthetic tests. An isolated Windows run with the actual pinned service and database passed authenticated startup, retention through the real PugPort bridge with a synthetic model response, recall, bank deletion and shutdown. Startup took 70.9 seconds. An isolated macOS run also passed the [Apple Silicon validation](#apple-silicon-validation). Both runs used synthetic data and zero paid API calls. Real-model quality and the full desktop workflow remain unverified.
 
 An earlier Windows attempt stopped under host memory pressure. The pilot requires at least 2.5 GiB of available system memory before launch and checks memory once per second while its process runs. Below 1 GiB, it stops its own service and uses local memory; it does not restart automatically. This is a conservative protection, not a measured minimum requirement or a guarantee against brief memory spikes.
 
@@ -83,3 +83,14 @@ Forgetting does not opt the project out of future retention. Uncheck that projec
 ## If it is unavailable
 
 Check the absolute Python path, pinned package versions, prepared embedding cache, selected API budget and project selection. After correcting setup, turn the service off and on to restart it. A missing service, expired budget, exhausted call cap or recall timeout keeps local memory available. Audit events distinguish fallback from completed retention; an unavailable status is not proof that installation or inference succeeded.
+
+## Apple Silicon validation
+
+The isolated run used macOS 26.6.2 on an arm64 M4 Max, Node.js 24.22.1, Python 3.12.16, Hindsight 1.1.0 and pg0-embedded 0.15.2. It used the pinned BGE model from the [environment setup](#prepare-the-environment) to compute embeddings locally. The PugPort bridge received one deterministic response from a synthetic model controller.
+
+- **Startup.** The service accepted authenticated requests and rejected requests without a token.
+- **Retain and recall.** A completed synthetic task was retained through the bridge. Recall returned an excerpt tied to the original local message ID.
+- **Delete.** Clearing the project's copy removed its bank from the service while preserving the original local message.
+- **Shutdown and fallback.** After stopping the runtime, the service endpoint closed, PostgreSQL removed its PID file and the Python process group exited. A subsequent recall kept the local memory result and recorded the service as unavailable.
+
+To repeat the check, use a temporary state directory and an isolated project with a synthetic completed task. Start the real Hindsight runtime with the prepared Python and model cache. Use the [model bridge test](../tests/hindsight-model-bridge.test.ts) controller fixture as a starting point for a deterministic extractor. Check the authenticated bank list after retention and deletion, and compare the recalled source ID with the local reply. Stop the runtime before checking fallback and process cleanup.
