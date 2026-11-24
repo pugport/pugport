@@ -263,6 +263,54 @@ export const pageHelper = String.raw`(() => {
     return walk(root).replace(/\n{3,}/g, '\n\n').trim();
   };
   const markdown = (root) => fullMarkdown(root).slice(-100000);
+  const joined = (roots) => roots.map((el) => fullMarkdown(el)).filter(Boolean).join('\n\n');
+  /** Shows exactly this normalized prompt; a short label or time may sit beside it. */
+  const shows = (el, full) => {
+    const have = norm(textOf(el));
+    return !!have && (have === full || (have.includes(full) && have.length <= full.length + 40));
+  };
+  // Author markers chat pages put on each turn. Another data-message-author-role value (tool, system) is an author
+  // PugPort cannot place in the answer.
+  // shortcut: pages without these markers keep the generic ranking, which cannot end an answer at a later question or
+  // tell a repeated prompt apart after a re-render; add the site's real markers here once its markup is recorded.
+  const TURN = '[data-message-author-role], [data-role="user"], [data-role="assistant"]';
+  const markedTurns = () => {
+    const marked = all(TURN).filter((el) => visible(el) && !excluded(el));
+    return marked
+      .filter((el) => !marked.some((other) => other !== el && el.contains(other)))
+      .map((el) => ({ el, author: el.getAttribute('data-message-author-role') || el.getAttribute('data-role') }));
+  };
+  /** A user turn holding the prompt: it, or an element inside it, shows it, so a long author label may sit beside it. */
+  const holds = (turn, full) => turn.author === 'user' && norm(textOf(turn.el)).includes(full) &&
+    (shows(turn.el, full) || Array.from(turn.el.querySelectorAll('*')).some((child) => shows(child, full)));
+  /**
+   * The answer on a page that marks each turn's author: the assistant turns after the prompt's user turn, up to the
+   * next user turn. known is the user turn found before; while it is on the page it stays the owner. Otherwise seen
+   * counts the copies of the prompt that were on the page before sending, so exactly one new copy owns the answer.
+   * More copies, or a turn whose author cannot be placed, are 'ambiguous'. Undefined when the page marks no user and
+   * assistant turns or shows no new copy of the prompt: the generic capture below applies.
+   */
+  const ownedTurns = (full, seen, known) => {
+    const turns = markedTurns();
+    if (!turns.some((turn) => turn.author === 'user') || !turns.some((turn) => turn.author === 'assistant')) return;
+    const owners = turns.filter((turn) => holds(turn, full)).map((turn) => turn.el);
+    const owner = known && owners.includes(known) ? known : owners.length === seen + 1 ? owners[seen] : null;
+    if (!owner) return owners.length > seen ? { code: 'ambiguous' } : undefined;
+    const thread = scrollOf(owner), answer = [];
+    for (const turn of turns) {
+      if (!(owner.compareDocumentPosition(turn.el) & Node.DOCUMENT_POSITION_FOLLOWING) || scrollOf(turn.el) !== thread) continue;
+      if (turn.author === 'user') break;
+      if (turn.author !== 'assistant') return { code: 'ambiguous' };
+      answer.push(turn.el);
+    }
+    return { owner, answer };
+  };
+  /** ownedTurns for the tracked prompt. Once a marked turn owned it, losing that turn never falls back to a guess. */
+  const trackedTurns = (t) => {
+    const owned = ownedTurns(t.full, t.seen, t.owner);
+    if (owned && owned.owner) t.owner = owned.owner;
+    return owned || (t.owner ? { code: 'lost' } : undefined);
+  };
   /** The user's own message as the page shows it: what appeared with exactly the text that was sent. */
   const userBubble = () => {
     const t = S.tracker;
@@ -270,8 +318,7 @@ export const pageHelper = String.raw`(() => {
     let best = null;
     for (const el of t.nodes) {
       if (!el.isConnected || excluded(el)) continue;
-      const have = norm(textOf(el));
-      if (have && (have === t.full || (have.includes(t.full) && have.length <= t.full.length + 40)) && (!best || best.contains(el))) best = el;
+      if (shows(el, t.full) && (!best || best.contains(el))) best = el;
     }
     t.user = best;
     return best;
@@ -345,12 +392,16 @@ export const pageHelper = String.raw`(() => {
         input.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
       return true;
     },
-    /** Starts watching the page for what changes after sending, outside the chat box. */
-    track(text) {
+    /**
+     * Starts watching the page for what changes after sending, outside the chat box. Copies of the prompt already in
+     * marked user turns are counted, unless it was sent before tracking (a recapture, or a reload while waiting).
+     */
+    track(text, sent) {
       if (S.tracker) S.tracker.observer.disconnect();
       const composer = S.input ? composerOf(S.input, S.send) : null;
       const before = new Set([...textParts(document.body), ...textOf(document.body).split(/\r?\n/).map(norm)]);
-      const t = { id: Date.now().toString(36) + Math.random().toString(36).slice(2), nodes: new Set(), added: new Set(), last: 0, full: norm(text), key: norm(text).slice(0, 50), composer, before, beforeText: norm(textOf(document.body)), beforeMatches: new Map(), fresh: new Map() };
+      const full = norm(text), seen = sent ? 0 : markedTurns().filter((turn) => holds(turn, full)).length;
+      const t = { id: Date.now().toString(36) + Math.random().toString(36).slice(2), nodes: new Set(), added: new Set(), last: 0, full, key: full.slice(0, 50), composer, before, beforeText: norm(textOf(document.body)), beforeMatches: new Map(), fresh: new Map(), seen, owner: null };
       t.observer = new MutationObserver((records) => {
         t.user = undefined;
         for (const record of records) {
@@ -387,10 +438,19 @@ export const pageHelper = String.raw`(() => {
         check,
       };
     },
-    /** The reply: what appeared after sending, outside the chat box and the user's own message. */
+    /**
+     * The reply: what appeared after sending, outside the chat box and the user's own message. Once marked turns own
+     * the prompt, only their answer counts, or { code } when it cannot be told; a saved reply selector never overrides.
+     */
     reply(selectors) {
       const t = S.tracker;
       if (!t) return null;
+      const owned = trackedTurns(t);
+      if (owned) {
+        if (owned.code) return { code: owned.code };
+        const full = joined(owned.answer);
+        return full ? Object.assign({ text: full.slice(-100000) }, full.length > 100000 ? { truncated: true } : null) : null;
+      }
       t.fresh.clear();
       const changed = changedNodes();
       const candidates = new Set(changed);
@@ -418,11 +478,17 @@ export const pageHelper = String.raw`(() => {
       const found = this.find(selectors);
       if (found.check || (!found.input && found.loginHint)) return { ok: false, code: found.check || 'login' };
       if (S.input) t.composer = composerOf(S.input, S.send);
+      // Bound retained nodes even when a site repeatedly replaces its whole thread.
+      for (const nodes of [t.nodes, t.added]) for (const el of nodes) if (!el.isConnected) nodes.delete(el);
+      const owned = trackedTurns(t);
+      if (owned) {
+        if (owned.code) return { ok: false, code: owned.code };
+        const full = joined(owned.answer);
+        return Object.assign({ ok: true, reply: full.slice(-100000), trackerId: id }, full.length > 100000 ? { truncated: true } : null);
+      }
       const bubble = userBubble();
       if (!bubble) return { ok: false, code: 'lost' };
       t.fresh.clear();
-      // Bound retained nodes even when a site repeatedly replaces its whole thread.
-      for (const nodes of [t.nodes, t.added]) for (const el of nodes) if (!el.isConnected) nodes.delete(el);
       const after = (el) => eligible(el, false) && scrollOf(el) === scrollOf(bubble) &&
         !!(bubble.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
       const candidates = new Set(Array.from(t.nodes).filter(after));
@@ -432,20 +498,30 @@ export const pageHelper = String.raw`(() => {
         return true;
       });
       roots.sort((a, b) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
-      const full = roots.map((el) => fullMarkdown(el)).filter(Boolean).join('\n\n');
+      const full = joined(roots);
       return Object.assign({ ok: true, reply: full.slice(-100000), trackerId: id }, full.length > 100000 ? { truncated: true } : null);
     },
+    /** Reads the reply to a prompt sent earlier, without an active tracker; never types or sends. */
     recapture(text, selectors) {
       const found = this.find(selectors);
       if (found.check || (!found.input && found.loginHint)) return { ok: false, code: found.check || 'login' };
-      const composer = S.input ? composerOf(S.input, S.send) : null;
       const full = norm(text);
+      const owned = ownedTurns(full, 0);
+      if (owned) {
+        if (owned.code) return { ok: false, code: owned.code };
+        const id = this.track(text, true);
+        S.tracker.user = S.tracker.owner = owned.owner;
+        const reply = joined(owned.answer);
+        if (!reply) return { ok: false, code: 'not-detected', trackerId: id };
+        return Object.assign({ ok: true, reply: reply.slice(-100000), trackerId: id, selectors: found.selectors }, reply.length > 100000 ? { truncated: true } : null);
+      }
+      const composer = S.input ? composerOf(S.input, S.send) : null;
       let bubble = null;
       for (const el of document.body.querySelectorAll('*')) {
         if (!visible(el) || excluded(el) || (composer && related(el, composer))) continue;
-        const have = norm(textOf(el));
-        if (have && (have === full || (have.includes(full) && have.length <= full.length + 40))) {
-          if (bubble && !related(bubble, el)) return { ok: false, code: 'lost' };
+        if (shows(el, full)) {
+          // Two copies of the prompt: no way to tell which one this reply answers.
+          if (bubble && !related(bubble, el)) return { ok: false, code: 'ambiguous' };
           if (!bubble || bubble.contains(el)) bubble = el;
         }
       }
@@ -454,7 +530,7 @@ export const pageHelper = String.raw`(() => {
         visible(el) && !related(el, bubble) && scrollOf(el) === scrollOf(bubble) &&
         !!(bubble.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)
       )) return { ok: false, code: 'lost' };
-      const id = this.track(text);
+      const id = this.track(text, true);
       S.tracker.user = bubble;
       const after = (el) =>
         visible(el) &&
@@ -477,7 +553,7 @@ export const pageHelper = String.raw`(() => {
         return true;
       });
       roots.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
-      const fullReply = roots.map((el) => fullMarkdown(el)).filter(Boolean).join('\n\n');
+      const fullReply = joined(roots);
       if (!fullReply) return { ok: false, code: 'not-detected', trackerId: id };
       return Object.assign(
         {

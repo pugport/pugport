@@ -45,15 +45,20 @@ test('recapture reads the assistant reply after the sent user prompt without an 
   assert.equal(f.bridge.recapture('Missing prompt', {}).code, 'lost');
 });
 
-test('recapture refuses ambiguous repeated prompts and later user turns', () => {
+test('recapture refuses repeated prompts and stops a marked answer at the next user turn', () => {
   const repeated = pageFixture(
     '<main id="thread"><p>Question</p><article>First answer</article><p>Question</p><article>Second answer</article></main><div id="composer"><textarea></textarea><button>Send</button></div>',
   );
-  assert.equal(repeated.bridge.recapture('Question', {}).ok, false);
+  assert.equal(repeated.bridge.recapture('Question', {}).code, 'ambiguous');
   const later = pageFixture(
     '<main id="thread"><p data-message-author-role="user">Question</p><article data-message-author-role="assistant">Answer</article><p data-message-author-role="user">Another question</p><article data-message-author-role="assistant">Another answer</article></main><div id="composer"><textarea></textarea><button>Send</button></div>',
   );
-  assert.equal(later.bridge.recapture('Question', {}).ok, false);
+  assert.equal(later.bridge.recapture('Question', {}).reply, 'Answer');
+  // Without author markers the later turn cannot be told from the answer, so nothing is taken.
+  const unmarked = pageFixture(
+    '<main id="thread"><p>Question</p><article>Answer</article><p data-role="user">Another question</p></main><div id="composer"><textarea></textarea><button>Send</button></div>',
+  );
+  assert.equal(unmarked.bridge.recapture('Question', {}).code, 'lost');
 });
 
 test('peek keeps the end of long markdown and repeated assistant content after the owner', () => {

@@ -60,7 +60,8 @@ export type WebAgentResult = {
   /**
    * human-check: a captcha or verification page; login: a sign-in wall; not-detected: no chat box found;
    * not-sent: the text could not be put in or sent; closed: the user closed the window meanwhile;
-   * not-installed: the desktop app to start is not installed.
+   * ambiguous: the page shows the sent prompt more than once, or a turn whose author cannot be told, so no reply is
+   * taken as the answer; not-installed: the desktop app to start is not installed.
    */
   code?:
     | 'human-check'
@@ -72,6 +73,7 @@ export type WebAgentResult = {
     | 'closed'
     | 'replaced'
     | 'lost'
+    | 'ambiguous'
     | 'unavailable'
     | 'not-installed'
     | 'error';

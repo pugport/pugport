@@ -927,6 +927,33 @@ test('web agents: a captcha or sign-in page stops and asks the user; retry and h
   assert.equal(f.message(second.reply.id).content, 'Recaptured reply without resending');
 });
 
+test('web agents: an unattributable reply keeps the input detection and a retry only recaptures', async (t) => {
+  const ambiguous: WebAgentResult = {
+    ok: false,
+    sent: true,
+    code: 'ambiguous',
+    message:
+      '消息发出去了，但 Muse 的页面上分不清哪条回复属于这次提问（同样的提问出现了不止一次，或认不出是谁写的）。请到它的窗口里查看；点「重试」只重新读取，不会重发。',
+  };
+  const fake = fakeBridge((request) =>
+    request.action === 'send' || request.action === 'recapture' ? ambiguous : { ok: true },
+  );
+  const f = fixture(t, { bridge: fake.bridge });
+  f.agents.update('muse', { enabled: true, acceptRisk: true });
+  const conversation = await f.workspace.createGeneralConversation();
+  const sent = f.agents.intercept(conversation.id, { ...base, content: '继续', externalAgentId: 'muse' })!;
+  await until(() => f.message(sent.reply.id).externalAgent!.status === 'failed');
+  const agent = f.message(sent.reply.id).externalAgent!;
+  assert.equal(agent.sent, true);
+  assert.equal(agent.handoff, true);
+  assert.equal(agent.note, ambiguous.message);
+  assert.notEqual(f.agents.view('muse').detection?.ok, false, 'the chat box was found; only the reply was unclear');
+  f.agents.retry(sent.reply.id);
+  await until(() => fake.calls.some((call) => call.action === 'recapture'));
+  await until(() => f.message(sent.reply.id).externalAgent!.status === 'failed');
+  assert.equal(fake.calls.filter((call) => call.action === 'send').length, 1, 'never resent');
+});
+
 test('web agents: a message cut off by a restart is reported, never re-sent', async (t) => {
   let recapturedReply = '';
   const fake = fakeBridge((request) => {
