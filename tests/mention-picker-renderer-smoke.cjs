@@ -62,7 +62,9 @@ window.renderFixture();`,
         windowsHide: true,
         stdio: 'inherit',
       });
-      const timeout = setTimeout(() => child.kill(), 45000);
+      // Hosted macOS paints offscreen frames slowly and a passing run there takes 40-46 s, so 45 s killed passing runs.
+      // Stay under renderer-smoke's 175 s limit so this launcher still cleans up and reports.
+      const timeout = setTimeout(() => child.kill(), 150_000);
       process.exitCode = await new Promise((resolve, reject) => {
         child.once('error', reject);
         child.once('exit', (code) => resolve(code ?? 1));

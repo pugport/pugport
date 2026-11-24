@@ -78,12 +78,14 @@ const motion=value=>win.webContents.debugger.sendCommand('Emulation.setEmulatedM
 await win.loadFile(${JSON.stringify(join(directory, 'index.html'))});
 win.webContents.debugger.attach('1.3');await motion('no-preference');
 const evaluate=code=>win.webContents.executeJavaScript(code);const pause=ms=>new Promise(r=>setTimeout(r,ms));
+// Folding finishes on animation frames, which hosted runners without a GPU paint slowly; wait for the state, not a fixed time.
+const waitFor=async(code,expected,message)=>{let actual;for(const end=Date.now()+10000;(actual=await evaluate(code))!==expected&&Date.now()<end;)await pause(20);assert.equal(actual,expected,message);};
 for(let i=0;i<100&&!await evaluate('window.ready');i++)await pause(20);
 await evaluate('window.configure("running","zh-CN","light")');await pause(500);
 assert.equal(await evaluate('document.querySelectorAll(".turn-group").length'),3);
 assert.match(await evaluate('document.querySelector(".turn-tail").textContent'),/处理中，用时 [0-9]+ 分 [0-9]+ 秒…$/);
-await evaluate('window.complete()');await pause(300);
-assert.equal(await evaluate('document.querySelector(".turn-status").getAttribute("aria-expanded")'),'false');
+await evaluate('window.complete()');
+await waitFor('document.querySelector(".turn-status").getAttribute("aria-expanded")','false');
 assert.equal(await evaluate('document.querySelectorAll(".turn-tool").length'),0);
 await evaluate('document.querySelector(".turn-status").click()');await pause(100);
 assert.equal(await evaluate('document.querySelectorAll(".turn-tool").length'),3);
@@ -118,7 +120,7 @@ await evaluate('window.configure("running","en","light")');await pause(250);
 await evaluate('document.querySelector(".conversation-scroll").style.height="250px";document.querySelector(".conversation-scroll > div").style.paddingBottom="1000px";document.querySelector(".conversation-scroll").scrollTop=300;window.complete()');
 await pause(20);const anchorTop=await evaluate('document.querySelector(".conversation-message").getBoundingClientRect().top');await pause(250);
 assert.ok(Math.abs(await evaluate('document.querySelector(".conversation-message").getBoundingClientRect().top')-anchorTop)<3,'fold preserves the visible answer anchor '+JSON.stringify({reduce:await evaluate('matchMedia("(prefers-reduced-motion: reduce)").matches'),anchorTop,after:await evaluate('document.querySelector(".conversation-message").getBoundingClientRect().top'),scroll:await evaluate('document.querySelector(".conversation-scroll").scrollTop')}));
-assert.equal(await evaluate('document.body.innerText.split("The requested change is ready.").length-1'),1,'completion keeps one final answer');
+await waitFor('document.body.innerText.split("The requested change is ready.").length-1',1,'completion keeps one final answer');
 win.webContents.setBackgroundThrottling(false);
 await motion('reduce');
 await evaluate('window.configure("running","en","dark")');await pause(250);assert.equal(await evaluate('getComputedStyle(document.querySelector(".turn-shimmer")).animationName'),'none');

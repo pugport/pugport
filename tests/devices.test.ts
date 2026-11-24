@@ -2916,13 +2916,6 @@ for (const write of [false, true]) {
       test(`${outcome === 'budget-full' ? 'round7' : 'round6'} late POST after ${trigger} (${write}, ${outcome})`, async (t) => {
         const peer = await startPeer(t);
         const w = workspaceFixture(t);
-        if (outcome === 'budget-full') {
-          const node = externalTaskRunner({} as ExternalTasks, w.workspace.store);
-          t.mock.method(peer.runner, 'cancelRequest', async (requestId: string, peerId: string) => {
-            for (let i = 0; i < 1000; i++) await node.cancelRequest(`synthetic-${i}`, peerId);
-            return node.cancelRequest(requestId, peerId);
-          });
-        }
         const released: string[] = [];
         const release = w.controller.releaseProject.bind(w.controller);
         t.mock.method(w.controller, 'releaseProject', (path: string, owner: string) => {
@@ -2967,6 +2960,14 @@ for (const write of [false, true]) {
         });
         const id = (await f.devices.add({ address: peer.address, code: peer.registry.createCode().code })).devices[0]!
           .id;
+        if (outcome === 'budget-full') {
+          const node = externalTaskRunner({} as ExternalTasks, w.workspace.store);
+          // Fill the budget before the timed cancel: 1000 commits inside it outlasted the 10 s stop timeout on hosted Windows.
+          for (let i = 0; i < 1000; i++) await node.cancelRequest(`synthetic-${i}`, peer.registry.list()[0]!.id);
+          t.mock.method(peer.runner, 'cancelRequest', (requestId: string, peerId: string) =>
+            node.cancelRequest(requestId, peerId),
+          );
+        }
         w.workspace.remote = f.devices;
         const conversation = await w.workspace.createGeneralConversation();
         const sent = await w.workspace.send(conversation.id, {

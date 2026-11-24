@@ -17,6 +17,10 @@ process.on('uncaughtException', fail);
 // resolves 'electron' before Electron serves its API, and Node then hands this file the npm package's path instead.
 const electron = require('electron/main');
 app = electron.app;
+// Every test app gets the shared offscreen capture handling, not only those started with offscreenElectronEnv. Hosted
+// macOS paints offscreen frames slowly, and a capture just after a resize then fails with UnknownVizError unless it
+// waits. 0 keeps each window's own frame rate.
+require('./offscreen-electron.cjs').installOffscreenElectron(electron, 0);
 // A new window is shrunk to the display's work area. Hosted Windows runners have a 1024x768 screen, so a test that
 // asked for a 1300x760 or 1120x1100 page got a 1024x728 one, and its layout and screenshot checks measured a size
 // nobody asked for. Every window keeps the size its test gave; later setSize calls are not shrunk.
