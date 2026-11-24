@@ -9,6 +9,17 @@ The `pugport` command lets you use your PugPort accounts, routing and task queue
 
 Except for `wait`, `doctor` and `node`, if the PugPort desktop app isn't running when you invoke `pugport`, the CLI starts it automatically in the background and waits up to 30 seconds for it to become ready (unless `PUGPORT_NO_START=1` is set). Commands other than `wait` can talk to a headless device node running locally on port `4319` when the desktop app isn't running.
 
+## Help language
+
+`pugport --help` and the chat's `/help` (with the slash-command descriptions) are shown in English, Simplified Chinese or Traditional Chinese. Other messages are not translated yet. Command names, flags and exit codes are the same in every language.
+
+The language comes from the terminal's locale: the first of `LC_ALL`, `LC_MESSAGES` and `LANG` that is set to something other than an empty value, `C` or `POSIX`. When none of them is, the system locale is used (the usual case on Windows). A Chinese locale gives Chinese — `zh_TW`, `zh_HK`, `zh_MO` and `zh-Hant` give Traditional Chinese — and any other locale gives English.
+
+```sh
+LC_ALL=zh_CN.UTF-8 pugport --help   # Simplified Chinese
+LC_ALL=en_US.UTF-8 pugport --help   # English
+```
+
 ## Full-screen terminal chat
 
 ```sh

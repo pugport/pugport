@@ -8,6 +8,7 @@ import type { DevicesView } from '../shared/devices.ts';
 import type { ExternalAgentView } from '../shared/external-agents.ts';
 import { calledFields, freeChainMentionId, namedIn } from '../shared/participants.ts';
 import { APP_VERSION } from '../shared/identity.ts';
+import type { Locale } from '../shared/i18n/index.ts';
 import { quotaLines, quotaTotals } from '../shared/quota-summary.ts';
 import type {
   AppState,
@@ -30,7 +31,7 @@ import {
   type LiveRun,
   type ReplyView,
 } from './conversation-view.ts';
-import { chatHelp, slashCommands } from './help.ts';
+import { chatHelp, slashCommandsIn } from './help.ts';
 import { mentionItems, PugAutocomplete, type MentionItem } from './mentions.ts';
 import {
   Container,
@@ -59,6 +60,8 @@ export type ChatDeps = {
   theme: Theme;
   /** Starts or focuses the desktop app; false when it cannot be found. */
   openDesktop: () => boolean;
+  /** The language of /help and the slash-command descriptions; Chinese, the source text, when not given. */
+  locale?: Locale;
   terminal?: Terminal;
   /** Fullscreen like Pi by default; tests pass a main-screen renderer. */
   renderer?: (terminal: Terminal) => TUI;
@@ -116,7 +119,7 @@ export class TerminalChat {
     this.editor = new PugEditor(this.ui, theme.editor(), { paddingX: 1, autocompleteMaxVisible: 8 });
     this.editor.setAutocompleteProvider(
       new PugAutocomplete(
-        slashCommands,
+        slashCommandsIn(deps.locale ?? 'zh-CN'),
         () => [...this.items, ...this.outside],
         () => this.loadOutside(),
       ),
@@ -484,7 +487,7 @@ export class TerminalChat {
   private async command(name: string) {
     const { theme, client } = this.deps;
     if (name === 'quit' || name === 'exit') return this.quit();
-    if (name === 'help') return this.note(chatHelp());
+    if (name === 'help') return this.note(chatHelp(this.deps.locale ?? 'zh-CN'));
     if (name === 'new') {
       this.conversation = undefined;
       this.replies.clear();

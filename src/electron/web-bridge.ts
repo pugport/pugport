@@ -78,6 +78,14 @@ type Status = {
   check: string;
 };
 type Point = { x: number; y: number };
+/** __pugportBridge.reply(): the reply text, or why marked turns could not attribute one. */
+type PageReply = { text?: string; selector?: string; truncated?: boolean; code?: 'ambiguous' | 'lost' };
+const ambiguousReply = (name: string): WebAgentResult => ({
+  ok: false,
+  code: 'ambiguous',
+  sent: true,
+  message: `消息发出去了，但 ${name} 的页面上分不清哪条回复属于这次提问（同样的提问出现了不止一次，或认不出是谁写的）。请到它的窗口里查看；点「重试」只重新读取，不会重发。`,
+});
 
 /** The page helper's own JavaScript world: the site's scripts can neither see nor tamper with it. */
 const world = 1077;
@@ -909,6 +917,7 @@ export class WebBridge {
       this.trackers.set(request.agentId, { id: result.trackerId, timer });
     }
     if (result.ok && result.reply?.trim()) return { ...result, sent: true };
+    if (result.code === 'ambiguous') return ambiguousReply(request.name);
     if (result.code === 'human-check' || result.code === 'login')
       return {
         ...this.needsUser(window, result.code, request.name),
@@ -1060,16 +1069,18 @@ export class WebBridge {
         if (limit) return { ...limit, sent: true };
         if (!status.tracking) {
           if (!this.trackers.has(request.agentId)) return { ok: false, code: 'replaced', sent: true };
-          trackerId = await this.page<string>(contents, `__pugportBridge.track(${JSON.stringify(text)})`);
+          // The page reloaded after sending: the prompt is already on it.
+          trackerId = await this.page<string>(contents, `__pugportBridge.track(${JSON.stringify(text)}, true)`);
           this.trackers.set(request.agentId, { id: trackerId, timer });
         }
         const quiet = status.quietMs ?? Date.now() - started;
         if (status.changed > 0 && !status.generating && quiet >= stableMs) {
-          const candidate = await this.page<{ text: string } | null>(
+          const candidate = await this.page<PageReply | null>(
             contents,
             `__pugportBridge.reply(${JSON.stringify(selectors ?? {})})`,
           );
-          if (candidate?.text) break;
+          // The page is settled, so an unattributable reply will not sort itself out by waiting.
+          if (candidate?.text || candidate?.code) break;
         }
         if (Date.now() - started > timeoutMs) {
           timedOut = true;
@@ -1078,10 +1089,11 @@ export class WebBridge {
         }
         await pause(this.options.pollMs ?? 400);
       }
-      const reply = await this.page<{ text: string; selector: string; truncated?: boolean } | null>(
+      const reply = await this.page<PageReply | null>(
         contents,
         `__pugportBridge.reply(${JSON.stringify(selectors ?? {})})`,
       );
+      if (reply?.code === 'ambiguous') return ambiguousReply(request.name);
       const timeoutMessage = timedOutGenerating
         ? '它还在回复，已超过等待时间；请在它的窗口里查看'
         : '没找到它的回复，请在它的窗口里查看。';

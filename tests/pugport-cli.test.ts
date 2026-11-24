@@ -127,6 +127,7 @@ test('wait arguments validate task ids, timeout and port, and help explains exit
     await run(
       { kind: 'help' },
       {
+        locale: 'zh-CN',
         stdout: {
           write: (text) => {
             help += text;

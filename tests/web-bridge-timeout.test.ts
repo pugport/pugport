@@ -167,6 +167,74 @@ test('a login redirect during reply wait returns login immediately without waiti
   assert.ok(clock < 5_000, 'returns immediately without waiting for timeout');
 });
 
+test('an unattributable reply ends the wait at once, and the retry only reads the page', async () => {
+  let clock = 0;
+  class FakeDate extends Date {
+    static override now() {
+      clock += 100;
+      return clock;
+    }
+  }
+  const h = uiHarness(bridgeCode, {
+    Date: FakeDate,
+    setTimeout: (fn: () => void, ms: number) => (ms > 600_000 ? { unref() {} } : setImmediate(fn)),
+    clearTimeout: () => {},
+  });
+  const bridge = new h.exports.WebBridge({ port: 1 });
+  const window = { webContents: { focus() {}, async insertText() {} }, isDestroyed: () => false };
+  bridge.window = () => window;
+  bridge.load = async () => {};
+  bridge.waitForPage = async () => ({
+    input: true,
+    send: true,
+    editable: false,
+    selectors: {},
+    check: '',
+    loginHint: false,
+  });
+  bridge.limit = async () => null;
+  bridge.click = () => {};
+  bridge.wasSent = async () => true;
+  // The page reloads once after sending, so the prompt is already on it when tracking starts again.
+  let tracking = false;
+  bridge.status = async () => {
+    const status = { tracking, generating: false, quietMs: 10_000, changed: 1, inputText: '', check: '' };
+    tracking = true;
+    return status;
+  };
+  const scripts: string[] = [];
+  bridge.page = async (_contents: unknown, script: string) => {
+    scripts.push(script);
+    if (script.includes('.prepare(') || script.includes('.sendTarget(')) return { x: 1, y: 1, disabled: false };
+    if (script.includes('.value(')) return 'Question';
+    if (script.includes('.track(')) return 'tracker-ambiguous';
+    if (script.includes('.reply(')) return { code: 'ambiguous' };
+    if (script.includes('.recapture(')) return { ok: false, code: 'ambiguous' };
+    if (script.includes('.stop(')) return true;
+    throw new Error(`Unexpected fake page call: ${script}`);
+  };
+  const target = { agentId: 'muse', name: 'Muse', url: 'https://fixture.test/' };
+  const sent = await bridge.send({ ...target, action: 'send', text: 'Question', timeoutMs: 180_000 });
+  assert.equal(sent.ok, false);
+  assert.equal(sent.code, 'ambiguous');
+  assert.equal(sent.sent, true, 'a retry only recaptures');
+  assert.equal(sent.trackerId, undefined, 'the released tracker is not handed back');
+  assert.match(sent.message, /^消息发出去了，但 Muse 的页面上分不清哪条回复属于这次提问.*不会重发。$/);
+  assert.ok(clock < 5_000, 'returns without waiting for the timeout');
+  assert.deepEqual(
+    scripts.filter((script) => script.includes('.track(')),
+    ['__pugportBridge.track("Question")', '__pugportBridge.track("Question", true)'],
+  );
+  assert.ok(scripts.includes('__pugportBridge.stop("tracker-ambiguous")'));
+
+  scripts.length = 0;
+  const recaptured = await bridge.recapture({ ...target, action: 'recapture', text: 'Question' });
+  assert.equal(recaptured.code, 'ambiguous');
+  assert.equal(recaptured.sent, true);
+  assert.equal(recaptured.message, sent.message);
+  assert.deepEqual(scripts, ['__pugportBridge.recapture("Question", {})'], 'reads without typing or sending');
+});
+
 test('peek and stop bypass the send queue and a pending peek never delays a new send', async () => {
   const h = uiHarness(bridgeCode);
   const bridge = new h.exports.WebBridge({ port: 1 });
