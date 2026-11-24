@@ -45,7 +45,6 @@
     "src/server/discovery.ts": 11,
     "src/server/extension-sync.ts": 3,
     "src/server/extensions.ts": 3,
-    "src/server/external-agents/grok-desktop.ts": 1,
     "src/server/external-agents/grok-routine.ts": 2,
     "src/server/file-manager.ts": 1,
     "src/server/git-read-only.ts": 2,

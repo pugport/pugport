@@ -207,7 +207,11 @@ export class WebBridge {
         .then(({ startGrokBot }) => startGrokBot(undefined, undefined, focusedHandle))
         .then(
           () => ({ ok: true }),
-          () => ({ ok: false, code: 'error' }),
+          // Matched by name: importing the error class here would load the platform helpers too early.
+          (error: unknown) => ({
+            ok: false,
+            code: (error as { name?: unknown } | null)?.name === 'GrokBotNotInstalledError' ? 'not-installed' : 'error',
+          }),
         );
     }
     if (candidate?.agentId === 'grok-bot' || ['desktop-open', 'desktop-handoff'].includes(String(candidate?.action)))

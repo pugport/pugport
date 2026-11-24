@@ -1,6 +1,7 @@
 import { createInterface } from 'node:readline';
 import { currentHost, type Host } from '../server/platform/host.ts';
 import { isDirectExecutable } from '../server/platform/executables.ts';
+import { grokBotOpensByBundleId, openGrokBot } from '../server/platform/grok-bot.ts';
 import { spawn } from '../server/platform/test-process.ts';
 import { underTest, UnderTestError } from '../server/platform/under-test.ts';
 
@@ -75,15 +76,23 @@ while ([DateTime]::UtcNow -lt $deadline) {
 `;
 }
 
-/** Launch from main, outside the backend's kill-on-close Windows Job. */
-export async function startGrokBot(host: Host = currentHost(), launch: typeof spawn = spawn, focusedWindow?: Buffer) {
-  if (underTest() && host === currentHost()) throw new UnderTestError('Grok Bot launch');
-  if (host.platform !== 'win32' || !host.env.LOCALAPPDATA) throw new Error('Grok Bot executable not found');
-  const executable = host.path.join(host.env.LOCALAPPDATA, 'Programs', 'Grok Bot', 'Grok Bot.exe');
-  if (!isDirectExecutable(executable, host)) throw new Error('Grok Bot executable not found');
+/** Grok Bot's environment: without PugPort's own variables or Electron's run-as-Node switch. */
+function launchEnv(host: Host) {
   const env = { ...host.env };
   for (const key of Object.keys(env))
     if (/^(?:ELECTRON_RUN_AS_NODE|PUGPORT_.*|COMBORUNNER_.*|AGENT_STUDIO_.*)$/i.test(key)) delete env[key];
+  return env;
+}
+
+/** Launch from main, outside the backend's kill-on-close Windows Job (macOS: through LaunchServices). */
+export async function startGrokBot(host: Host = currentHost(), launch: typeof spawn = spawn, focusedWindow?: Buffer) {
+  if (underTest() && host === currentHost()) throw new UnderTestError('Grok Bot launch');
+  // macOS opens the app hidden and behind PugPort, so no window helper follows.
+  if (grokBotOpensByBundleId(host)) return openGrokBot(launchEnv(host), host);
+  if (host.platform !== 'win32' || !host.env.LOCALAPPDATA) throw new Error('Grok Bot executable not found');
+  const executable = host.path.join(host.env.LOCALAPPDATA, 'Programs', 'Grok Bot', 'Grok Bot.exe');
+  if (!isDirectExecutable(executable, host)) throw new Error('Grok Bot executable not found');
+  const env = launchEnv(host);
   const launchedAt = Date.now();
   await new Promise<void>((resolve, reject) => {
     // Run from its own folder so Grok Bot never holds PugPort's folder (or a test folder) open.
