@@ -56,6 +56,9 @@ export class WebUsageMonitor {
   private configurationVersion?: string;
   private generation = 0;
   private homeUrl?: string;
+  private pageUrl?: string;
+  /** Where the page sat without usage for two captures (one may be a usage page still loading). A panel opening there has no address to reload. */
+  private plainUrl?: string;
   private diagnostics: string[] = [];
   private grokResult?: WebAgentResult;
   private grokEndpoint?: string;
@@ -378,6 +381,8 @@ export class WebUsageMonitor {
       if (this.blocked) return;
       const page = await this.options.snapshot();
       if (!current() || !this.visible()) return;
+      const settled = page.url === this.pageUrl;
+      this.pageUrl = page.url;
       if (this.configuredUsageUrl && page.url !== this.homeUrl && page.url !== this.configuredUsageUrl) return;
       const limit = page.notices.map((text) => detectWebLimit(text, true, this.now())).find(Boolean);
       if (limit && limit.reason !== this.limit?.reason) this.limit = limit;
@@ -391,6 +396,7 @@ export class WebUsageMonitor {
           /每周限额|weekly (?:limit|allowance)|额外的?使用额度|(?:extra|additional) usage/i.test(page.text);
         if (usageFound && this.diagnostics.length && this.quota) this.quota = { ...this.quota, stale: true };
         if (!usageFound) this.homeUrl = page.url;
+        if (!usageFound && settled) this.plainUrl = page.url;
         this.key = undefined;
         return;
       }
@@ -399,6 +405,7 @@ export class WebUsageMonitor {
         this.homeUrl &&
         new URL(this.homeUrl).origin === this.origin() &&
         page.url !== this.homeUrl &&
+        page.url !== this.plainUrl &&
         safeWebUsageRoute(page.url, this.origin())
       ) {
         this.usageUrl = page.url;
