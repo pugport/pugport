@@ -887,6 +887,10 @@ test('claimed ignored output changed during run counts; stale, outside and depen
   mkdirSync(join(directory, 'node_modules'));
   writeFileSync(join(directory, '.gitignore'), 'reports/\n');
   writeFileSync(join(directory, 'reports/result.txt'), 'synthetic');
+  // Windows file times and Date.now() come from different clocks, so a file written just now can look a few ms in
+  // the future. Date the write inside the run instead of comparing it with the current millisecond.
+  const during = new Date(Date.now() - 1000);
+  utimesSync(join(directory, 'reports/result.txt'), during, during);
   writeFileSync(join(directory, 'node_modules/result.txt'), 'synthetic');
   const record = { ...run(directory), startedAt: new Date(Date.now() - 2000).toISOString() };
   assert.equal((await confirmFileOutcome(record, ['reports/result.txt'])).status, 'completed');

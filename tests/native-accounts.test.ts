@@ -563,10 +563,12 @@ public class LoginStateProbe {
       'v4.0.30319',
       'csc.exe',
     );
+    // Compiling only builds the probe; this test does not measure it. A cold csc.exe on a busy hosted runner has
+    // taken over 20 s, so the limit only stops a hung compiler from holding the shard.
     execFileSync(compiler, ['/nologo', '/target:exe', '/platform:x64', `/out:${executable}`, sourceFile], {
       windowsHide: true,
       stdio: 'pipe',
-      timeout: 20_000,
+      timeout: 120_000,
     });
     for (const original of [base, codexBase]) {
       const target = await createNativeAccount(

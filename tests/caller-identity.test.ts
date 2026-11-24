@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
+import { execFile, spawn } from 'node:child_process';
 import { connect, createServer, type AddressInfo, type Socket } from 'node:net';
 import { test } from 'node:test';
+import { promisify } from 'node:util';
 import {
   chainHasExecutor,
   executorCaller,
   parseLsof,
   parseNetstat,
+  parseNettop,
   parseSs,
   perConnection,
   parseDarwinNetstat,
@@ -45,6 +48,41 @@ test('macOS netstat output: the owner column comes from the header, IPv4 and map
   assert.deepEqual(parseDarwinNetstat('', '127.0.0.2', 5000, 4317), []);
 });
 
+// Synthetic `nettop -L 1 -n -m tcp -t loopback -J state` output: each process row is followed by its sockets.
+const nettop =
+  ',state,\n' +
+  'node.99,,\n' +
+  'tcp4 127.0.0.1:4317<->*:*,Listen,\n' +
+  'tcp4 127.0.0.1:4317<->127.0.0.2:5000,Established,\n' +
+  'curl.42,,\n' +
+  'tcp4 127.0.0.2:5000<->127.0.0.1:4317,Established,\n' +
+  'Code Helper, beta.43,,\n' +
+  'tcp6 ::ffff:127.0.0.2.5000<->::ffff:127.0.0.1.4317,Established,\n' +
+  'tcp6 ::1.5001<->::1.4317,Established,\n';
+
+test('macOS nettop output: a socket belongs to the process row above it, IPv4 and mapped IPv6 rows both count', () => {
+  assert.deepEqual(parseNettop(nettop, '127.0.0.2', 5000, 4317), [42, 43], 'a name with a space and a comma');
+  assert.deepEqual(parseNettop(nettop, '127.0.0.1', 4317, 5000), [], 'only the client end, by address');
+  assert.deepEqual(parseNettop(nettop, '127.0.0.2', 5001, 4317), []);
+  assert.deepEqual(parseNettop(nettop, '127.0.0.1', 5001, 4317), [], 'the backend listens on IPv4');
+  assert.deepEqual(
+    parseNettop('tcp4 127.0.0.2:5000<->127.0.0.1:4317,Established,\n', '127.0.0.2', 5000, 4317),
+    [],
+    'no process row, no owner',
+  );
+  assert.deepEqual(
+    parseNettop(
+      'time,,state,\n12:00:00.1,curl.42,,\n12:00:00.2,tcp4 127.0.0.2:5000<->127.0.0.1:4317,Established,\n',
+      '127.0.0.2',
+      5000,
+      4317,
+    ),
+    [42],
+    'a leading time column',
+  );
+  assert.deepEqual(parseNettop('', '127.0.0.2', 5000, 4317), []);
+});
+
 test('on macOS netstat names the caller, and lsof runs only when it cannot, one probe at a time', async () => {
   const options = { remotePort: 5000, localPort: 4317, remoteAddress: '127.0.0.2', platform: 'darwin' as const };
   const table = '42 12\n12 7\n7 1\n';
@@ -56,6 +94,16 @@ test('on macOS netstat names the caller, and lsof runs only when it cannot, one 
   };
   assert.equal(await executorCaller({ ...options, owns: (pid) => pid === 7, run: netstatFirst }), true);
   assert.deepEqual(started.sort(), ['/usr/sbin/netstat', 'ps']);
+
+  // An empty netstat table (macOS 27 under an ad-hoc signed ancestor): nettop names the caller, still without lsof.
+  started.length = 0;
+  const blindNetstat = async (file: string) => {
+    started.push(file);
+    if (file === 'lsof') throw new Error('lsof must not run');
+    return file.endsWith('nettop') ? nettop : file === 'ps' ? table : '';
+  };
+  assert.equal(await executorCaller({ ...options, owns: (pid) => pid === 7, run: blindNetstat }), true);
+  assert.deepEqual(started.sort(), ['/usr/bin/nettop', '/usr/sbin/netstat', 'ps']);
 
   // A netstat without an owner column falls back to lsof.
   const lsofOutput = 'p42\nn127.0.0.2:5000->127.0.0.1:4317\n';
@@ -199,3 +247,47 @@ test('a real loopback connection from this process is found with the system tool
     'the peer is this test process, which counts as the backend itself',
   );
 });
+
+test(
+  'on macOS the system tools name a client in another process, without lsof, from a Node parent',
+  // A client that never connects would otherwise leave this waiting for its port forever.
+  { skip: process.platform !== 'darwin', timeout: 30_000 },
+  async (t) => {
+    // macOS 27 gives netstat an empty table under this ad-hoc signed Node, so this checks the probe that still works.
+    const server = createServer((socket) => socket.on('error', () => {}));
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+    const serverPort = (server.address() as AddressInfo).port;
+    const client = spawn(
+      process.execPath,
+      [
+        '-e',
+        `const s = require('node:net').connect(${serverPort}, '127.0.0.1', () => console.log(s.localPort)); setInterval(() => {}, 1000);`,
+      ],
+      { stdio: ['ignore', 'pipe', 'inherit'] },
+    );
+    t.after(() => {
+      client.kill();
+      server.close();
+    });
+    const clientPort = Number(await new Promise<Buffer>((done) => client.stdout.once('data', done)));
+    const exec = promisify(execFile);
+    const asked: number[] = [];
+    const answer = await executorCaller({
+      remotePort: clientPort,
+      localPort: serverPort,
+      remoteAddress: '127.0.0.1',
+      owns: (pid) => {
+        asked.push(pid);
+        return false;
+      },
+      // lsof stands in for the probe that blocks on an unanswering mount.
+      run: async (file, args, timeoutMs) => {
+        if (file === 'lsof') throw new Error('lsof must not be needed');
+        return (await exec(file, args, { timeout: timeoutMs })).stdout;
+      },
+      timeoutMs: 15000,
+    });
+    assert.equal(answer, true, 'the client descends from this test process');
+    assert.equal(asked[0], client.pid, 'the peer is the client process');
+  },
+);

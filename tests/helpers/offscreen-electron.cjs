@@ -15,9 +15,20 @@ function offscreenElectronEnv(baseEnv = process.env) {
   return env;
 }
 
-function installOffscreenElectron(electron) {
+function installOffscreenElectron(electron, frameRate = 240) {
   const app = electron?.app;
-  if (!app || app.__offscreenInstalled) return;
+  if (!app) return;
+  // electron-loader.cjs installs the rest for every app but passes 0: many tests count frames in their waits, so a
+  // faster frame rate would shorten them. This NODE_OPTIONS preload still raises it for its own apps.
+  if (frameRate && !app.__offscreenFrameRate) {
+    app.__offscreenFrameRate = frameRate;
+    app.on('browser-window-created', (_event, win) => {
+      try {
+        if (win?.webContents?.isOffscreen?.()) win.webContents.setFrameRate?.(frameRate);
+      } catch {}
+    });
+  }
+  if (app.__offscreenInstalled) return;
   app.__offscreenInstalled = true;
 
   const origExit = app.exit.bind(app);
@@ -50,9 +61,6 @@ function installOffscreenElectron(electron) {
     wc.on('paint', (_e, _dirty, image) => {
       for (const resolve of paintWaiters.splice(0)) resolve(image);
     });
-    try {
-      if (wc.isOffscreen?.()) wc.setFrameRate?.(240);
-    } catch {}
 
     let resizedAt = 0;
     for (const method of ['setSize', 'setContentSize']) {
@@ -109,7 +117,8 @@ function installOffscreenElectron(electron) {
   });
 }
 
-if (process.versions?.electron) {
+// Only as the NODE_OPTIONS preload: electron-loader.cjs requires this file too and installs it with its own frame rate.
+if (process.versions?.electron && (process.env.NODE_OPTIONS || '').includes(selfPath)) {
   if (!Module.__offscreenLoadHooked) {
     Module.__offscreenLoadHooked = true;
     const origLoad = Module._load;

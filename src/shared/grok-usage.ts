@@ -2,6 +2,20 @@ export const grokUsageHint =
   'Grok Bot 由 Cursor 提供，账单在 cursor.com；请用你在 Grok Bot 里登录的同一个账号。这个窗口只读用量，看不到聊天记录。';
 export const grokPlanMismatch =
   '读到的是 Cursor 账号自带的 Grok Bot 计划，不是 SuperGrok；如果 Grok Bot 里用的是别的账号，请换那个账号登录';
+/**
+ * Whether the account behind a Grok Bot usage reading is the chat account the user confirmed. `fingerprint` is the
+ * reading account's hash, present only when the usage source reports a comparable identity.
+ */
+export type GrokUsageAccount = { status: 'matches' | 'different' | 'unverified'; fingerprint?: string };
+export function grokUsageAccountLine(account: GrokUsageAccount): string {
+  return account.status === 'matches'
+    ? '用量账号与你确认的 Grok Bot 聊天账号一致'
+    : account.status === 'different'
+      ? '用量账号不是你确认的 Grok Bot 聊天账号，这份用量可能属于别的账号'
+      : account.fingerprint
+        ? '用量账号未核验：请确认它就是你在 Grok Bot 里聊天用的账号'
+        : '用量账号未核验：这个用量来源不提供账号身份';
+}
 export const grokDiagnosticMessages = {
   success: '已读取用量',
   login: '需要登录 Grok Bot 用的账号',
