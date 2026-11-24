@@ -1,6 +1,6 @@
 import { packExternalContext } from './context-pack.ts';
 import { GrokRoutineStore, grokReplyHash, grokWaitingNote, postGrokRoutine } from './grok-routine.ts';
-import { ensureGrokBotRunning, grokDesktopRequiredNote } from './grok-desktop.ts';
+import { ensureGrokBotRunning, grokDesktopMissingNote, grokDesktopRequiredNote } from './grok-desktop.ts';
 import { cleanGrokDiagnostic, grokDiagnostic } from '../../shared/grok-usage.ts';
 import { randomUUID, randomBytes } from 'node:crypto';
 import type { Conversation, ConversationMessage, MessageInput, Workflow } from '../../shared/types.ts';
@@ -642,12 +642,14 @@ export class ExternalAgents {
     if (this.workspace.store.get<Conversation>('conversation', message.conversationId)?.deletedAt) return;
     const routine = this.routineStore.read();
     if (!routine || !this.view('grok-bot').available) throw new Error('Grok Bot 例程不可用。');
+    let missing = false;
     const running = await ensureGrokBotRunning({
       start: async () => {
         const result = await this.bridge.request(
           { action: 'desktop-start-minimized', agentId: 'grok-bot', name: 'Grok Bot', url: grokBotUrl() },
           10_000,
         );
+        missing = result.code === 'not-installed';
         if (!result.ok) throw new Error('Grok Bot 例程不可用。');
       },
       ...this.options.routineDesktop,
@@ -664,10 +666,11 @@ export class ExternalAgents {
       return;
     }
     if (!running) {
+      const note = missing ? grokDesktopMissingNote : grokDesktopRequiredNote;
       this.patch(messageId, (agent, current) => {
         agent.status = 'needs-user';
-        agent.note = grokDesktopRequiredNote;
-        current.content = grokDesktopRequiredNote;
+        agent.note = note;
+        current.content = note;
       });
       return;
     }
@@ -758,7 +761,9 @@ export class ExternalAgents {
       numbered.length > 0 && unnumbered.length === 0
         ? numbered.length < numbered.at(-1)!.part! || !!numbered.at(-1)!.more
         : more;
-    this.patch(message.id, (agent, current) => {
+    // Nobody waits for it any more: the part of a coordinated task it answers had already settled unanswered.
+    const late = message.externalAgent?.status !== 'done' && !this.waiters.has(message.id);
+    const saved = this.patch(message.id, (agent, current) => {
       agent.routine!.replied = true;
       agent.routine!.lastPartHash = partHash;
       agent.routine!.parts = ordered;
@@ -767,6 +772,8 @@ export class ExternalAgents {
       delete agent.note;
       current.content = content;
     });
+    if (late && saved?.workflowId && saved.externalAgent?.status === 'done')
+      void this.workspace.resumeLateExternalReply(saved.id).catch(() => undefined);
     return 200;
   }
 

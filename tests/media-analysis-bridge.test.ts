@@ -14,6 +14,7 @@ import { MediaAnalysisManager, type MediaAnalysisReport } from '../src/server/me
 import { createMediaDecoder } from '../src/server/media-decoder.ts';
 import { inspectQuitWork } from '../src/server/quit-inspection.ts';
 import type { ExecuteContext, Project, RuntimeSnapshot, RuntimeTarget, Workflow } from '../src/shared/types.ts';
+import { idleMachineReading } from './helpers/machine-reading.ts';
 
 const request = (args: Record<string, unknown>) => ({
   jsonrpc: '2.0',
@@ -214,6 +215,9 @@ async function fixture(t: TestContext) {
   controller.snapshots = [snapshot];
   t.mock.method(codexAdapter, 'discover', async () => snapshot);
   t.mock.method(controller, 'refresh', async () => {});
+  // Admission reads this computer's free memory: below the reserve a start queues by design, so a busy host
+  // would hold the synthetic run past every wait below. The fixture describes an idle machine instead.
+  t.mock.method(controller, 'machineReading', idleMachineReading);
   const calls: Array<{ ctx: ExecuteContext; finish: () => void; fail: (error: Error) => void }> = [];
   t.mock.method(codexAdapter, 'execute', async (ctx: ExecuteContext) => {
     await new Promise<void>((resolve, reject) => {

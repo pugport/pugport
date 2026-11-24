@@ -335,7 +335,7 @@ test('test mode refuses the real Grok Bot launcher', async () => {
 
 test('main bridge dispatches minimized start without opening a protocol or a browser', async () => {
   let launches = 0;
-  let fail = false;
+  let fail: string | undefined;
   const { WebBridge } = await electronModule(
     'src/electron/web-bridge.ts',
     {
@@ -354,7 +354,7 @@ test('main bridge dispatches minimized start without opening a protocol or a bro
       syntheticLaunch: async (_host: unknown, _launch: unknown, handle: Buffer) => {
         assert.equal(handle.readUInt32LE(), 456);
         launches++;
-        if (fail) throw new Error('synthetic failure');
+        if (fail) throw Object.assign(new Error('synthetic failure'), { name: fail });
       },
     },
     {
@@ -371,10 +371,12 @@ test('main bridge dispatches minimized start without opening a protocol or a bro
   });
   const request = { action: 'desktop-start-minimized', agentId: 'grok-bot', url: 'arbitrary ignored input' };
   assert.equal((await bridge.handle(request)).ok, true);
-  fail = true;
-  assert.equal((await bridge.handle(request)).ok, false);
+  fail = 'Error';
+  assert.deepEqual({ ...(await bridge.handle(request)) }, { ok: false, code: 'error' });
+  fail = 'GrokBotNotInstalledError';
+  assert.deepEqual({ ...(await bridge.handle(request)) }, { ok: false, code: 'not-installed' });
   assert.equal((await bridge.handle({ ...request, agentId: 'muse' })).ok, false);
   bridge.dispose();
   assert.equal((await bridge.handle(request)).code, 'closed');
-  assert.equal(launches, 2);
+  assert.equal(launches, 3);
 });

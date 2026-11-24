@@ -4,6 +4,21 @@ The Windows installer uses the existing lightweight desktop package and electron
 application ID is `ComboRunner.App`. Installation is per user, and uninstall preserves
 `%APPDATA%\ComboRunner\data`.
 
+## Download paths
+
+Windows has a per-user installer and a portable ZIP today.
+
+- The per-user installer ships from the release build: `npm run release:win` packages the unpacked `release/PugPort-win32-x64`
+  desktop package into an electron-builder NSIS installer, `PugPort-Setup-<version>.exe`, with per-user installation
+  (`perMachine: false`), one-click install, no app-data removal on uninstall and run-after-finish. The uninstall
+  preserves `%APPDATA%\ComboRunner\data`.
+- The portable ZIP is a review-build artifact: the CI workflow creates `PugPort-<version>-windows-x64-<shortCommit>.zip`
+  (a `Compress-Archive` of the unpacked `release/PugPort-win32-x64` folder), adds `SHA256SUMS.txt` and a package
+  inventory, and uploads it as a 14-day Actions artifact for testers. It is not a published Release and not the in-app
+  updater. Extract the complete folder and run `PugPort.exe`; do not copy only the executable.
+
+Installed Windows copies read the update feed at `https://download.pugport.com/windows`.
+
 ## Build locally
 
 1. On Windows, update the version with `npm run version:patch` when preparing a new release.

@@ -325,6 +325,13 @@ export function taskShown(selectedRunsTaskId: string | undefined, visibleConvers
       : visibleConversationIds.includes(workflow.conversationId);
 }
 
+/** The desktop notification title: the conversation's own title, else a singular Chat fallback. */
+export function finishNotificationTitle(conversationTitle?: string): string {
+  if (conversationTitle) return shownTitle(conversationTitle);
+  // An untitled conversation is one chat, not the plural Chats navigation heading.
+  return translateInterfaceText('聊天');
+}
+
 /** A system notification when a task finishes or needs a reply, per the "notify on finish" setting. */
 export function useFinishNotifications(
   workflows: Workflow[] | undefined,
@@ -348,7 +355,7 @@ export function useFinishNotifications(
       if (!finished && !asks) continue;
       if ((mode ?? 'background') === 'background' && document.hasFocus() && visible(workflow)) continue;
       const conversationTitle = conversations.find((item) => item.id === workflow.conversationId)?.title;
-      const title = conversationTitle ? shownTitle(conversationTitle) : translateInterfaceText('对话');
+      const title = finishNotificationTitle(conversationTitle);
       const body = translateInterfaceText(
         asks
           ? '等待你的确认'

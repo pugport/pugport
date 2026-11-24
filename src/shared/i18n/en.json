@@ -6311,6 +6311,7 @@
   "这台电脑": "This computer",
   "这台电脑上没找到": "Not found on this computer: ",
   "这台电脑上没找到 Cursor": "Cursor wasn't found on this computer",
+  "这台电脑上没有找到 Grok Bot 桌面应用，回复送不回来。请先安装 Grok Bot 再重试。": "The Grok Bot desktop app isn't installed on this computer, so replies can't reach you. Install Grok Bot and retry.",
   "这台电脑同时最多运行": "This computer runs at most",
   "这台电脑同时最多运行 {0} 个执行器（按内存和处理器估算），等前面的结束后自动开始。": "This computer runs at most {0} executors at once (estimated from memory and processor); it starts automatically when earlier ones finish.",
   "这台电脑的系统不支持移到回收站。": "This computer's system can't move items to the Recycle Bin.",
@@ -10139,5 +10140,9 @@
   "这条回复由你从 Grok Bot 复制过来。": "You copied this reply from Grok Bot.",
   "这条已经有回复了。": "This message already has a reply.",
   "这条消息没有在等回复。": "This message isn't waiting for a reply.",
-  "附到这条消息": "Attach to this message"
+  "附到这条消息": "Attach to this message",
+  "{0} 的回复晚到了，已收下（没有重新发送）。": "{0}'s reply arrived late and was accepted (nothing was sent again).",
+  "{0} 的回复晚到了，正在把它合进这条答复…": "{0}'s reply arrived late; combining it into this answer…",
+  "的回复晚到了，已收下（没有重新发送）。": "'s reply arrived late and was accepted (nothing was sent again).",
+  "的回复晚到了，正在把它合进这条答复…": "'s reply arrived late; combining it into this answer…"
 }

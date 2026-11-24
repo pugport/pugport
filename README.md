@@ -90,7 +90,7 @@ Closing the window keeps PugPort in the tray so queued work keeps running; choos
 
 ## Status
 
-Early development. Version 0.0.39 runs on Windows x64 and Apple silicon Macs, with in-app updates; download it from [pugport.com](https://pugport.com/#download). The Windows installer is not code-signed yet and the Mac app is not notarized yet, so each system asks you to confirm the first launch. Release notes are on the [dev log](https://pugport.dev); see also [platform support](docs/PLATFORMS.md). PugPort was called ComboRunner until October 2026; existing data, settings and chats carry over.
+Early development. Version 0.0.39 runs on Windows x64 and Apple silicon Macs, with in-app updates; download it from [pugport.com](https://pugport.com/#download). The Windows installer is not code-signed yet and the Mac app is not notarized yet, so each system asks you to confirm the first launch; Windows also builds a portable ZIP for review builds. The Mac release is an Apple Silicon (arm64) build that is ad-hoc signed and updates itself from the signed feed; Intel Mac acceptance has not been performed. Release instructions are in [Windows releases](docs/RELEASING-WINDOWS.md) and [Mac releases](docs/RELEASING-MAC.md); release notes are on the [dev log](https://pugport.dev); see also [platform support](docs/PLATFORMS.md). PugPort was called ComboRunner until October 2026; existing data, settings and chats carry over.
 
 ## Websites
 
