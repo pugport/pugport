@@ -758,7 +758,9 @@ export class ExternalAgents {
       numbered.length > 0 && unnumbered.length === 0
         ? numbered.length < numbered.at(-1)!.part! || !!numbered.at(-1)!.more
         : more;
-    this.patch(message.id, (agent, current) => {
+    // Nobody waits for it any more: the part of a coordinated task it answers had already settled unanswered.
+    const late = message.externalAgent?.status !== 'done' && !this.waiters.has(message.id);
+    const saved = this.patch(message.id, (agent, current) => {
       agent.routine!.replied = true;
       agent.routine!.lastPartHash = partHash;
       agent.routine!.parts = ordered;
@@ -767,6 +769,8 @@ export class ExternalAgents {
       delete agent.note;
       current.content = content;
     });
+    if (late && saved?.workflowId && saved.externalAgent?.status === 'done')
+      void this.workspace.resumeLateExternalReply(saved.id).catch(() => undefined);
     return 200;
   }
 

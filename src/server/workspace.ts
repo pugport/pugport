@@ -10808,6 +10808,126 @@ ${message.source === 'agent' ? '这是同一蜂群中的协作信息，不是用
     }
   }
   /**
+   * An agent outside PugPort answered after its part of a coordinated message had settled unanswered (the Grok Bot
+   * routine stops waiting after 30 minutes). That part is taken up once: it counts as answered, and its reply goes
+   * through the same tool-less last step a reply in time goes through. Nothing is sent to the agent again, no part
+   * that already finished runs again, and no run with tools reads the reply: the coordinator only hears that it came.
+   * Only while the message is still the conversation's latest task and nobody stopped, resent or continued it or that
+   * part; otherwise the reply simply stays in its own bubble, as before.
+   */
+  async resumeLateExternalReply(messageId: string): Promise<void> {
+    if (this.closing) return;
+    const message = this.store.get<ConversationMessage>('message', messageId);
+    const agent = message?.externalAgent;
+    if (!message?.workflowId || agent?.status !== 'done' || !agent.untrusted || !message.content.trim()) return;
+    const member = this.store.get<Workflow>('workflow', message.workflowId);
+    if (
+      !member?.delegation ||
+      member.delegation.agent?.externalAgentId !== agent.agentId ||
+      member.finalMessageId !== message.id ||
+      // Settled unanswered. A part the user stopped, or one the app interrupted, is left as it is.
+      member.status !== 'blocked' ||
+      member.lateReply ||
+      member.stopped ||
+      member.userCancelled ||
+      member.deletedAt ||
+      member.archivedAt ||
+      member.followUp ||
+      member.supersededBy ||
+      this.active.has(member.id) ||
+      !this.lateReplyLead(member, agent.agentId)
+    )
+      return;
+    // Claimed before anything else can run: a repeated callback finds the part already taken up.
+    member.lateReply = { messageId, at: this.now(), state: 'pending' };
+    member.status = 'completed';
+    member.error = undefined;
+    for (const step of member.plan) if (step.status === 'failed') step.status = 'completed';
+    this.scheduling(member, `${agent.name} 的回复晚到了，已收下（没有重新发送）。`);
+    this.publish(member);
+    const parentId = member.delegation.parentId;
+    const running = this.active.get(parentId);
+    if (running) {
+      // Still working on the message: its own last step reads the reply. Its coordinator only hears that it came.
+      const outcome = `已完成：\n${this.memberResult(member, message.content)}`;
+      void this.notifyRun(
+        parentId,
+        `[子任务结果] ${member.delegation.agent?.label ?? agent.name}（task_id: ${member.id}）${outcome}`,
+        { source: 'member-result' },
+      ).catch(() => false);
+      await running.done.catch(() => undefined);
+      if (this.store.get<Workflow>('workflow', member.id)?.lateReply?.state !== 'pending') return;
+    }
+    const lead = this.lateReplyLead(member, agent.agentId);
+    const answer = lead?.webCombine && this.store.get<ConversationMessage>('message', lead.webCombine.answerId);
+    const project = lead && this.store.get<Project>('project', lead.projectId);
+    // Done without a last step (the coordinator said the replies stand on their own), or no longer this round.
+    if (!lead || lead.status !== 'completed' || this.active.has(lead.id) || !answer || !project || this.closing) {
+      this.settleLateReply(member.id, 'not-combined');
+      return;
+    }
+    // The message's last step runs once more, for this reply, under the message's own task (the user can stop it).
+    const abort = new AbortController();
+    const entry = { abort, done: Promise.resolve(), pendingStart: true, workflow: lead };
+    this.active.set(lead.id, entry);
+    lead.status = 'running';
+    lead.error = undefined;
+    this.scheduling(lead, `${agent.name} 的回复晚到了，正在把它合进这条答复…`);
+    this.publish(lead);
+    entry.done = (async () => {
+      try {
+        await this.combineWebReplies(lead, project, answer, abort.signal);
+      } finally {
+        this.settleLateReply(member.id, 'not-combined');
+        lead.status = 'completed';
+        lead.phase = 'summarize';
+        lead.activeStepId = lead.plan.at(-1)?.id;
+        this.active.delete(lead.id);
+        this.publish(lead);
+        this.scheduleTick(false);
+      }
+    })();
+    await entry.done;
+  }
+  /** The coordinated message a late reply belongs to, while it may still take the reply in. */
+  private lateReplyLead(member: Workflow, agentId: string): Workflow | undefined {
+    const lead = member.delegation && this.store.get<Workflow>('workflow', member.delegation.parentId);
+    const conversation = lead && this.store.get<Conversation>('conversation', lead.conversationId);
+    const project = lead && this.store.get<Project>('project', lead.projectId);
+    if (
+      !lead ||
+      // Only a message the user sent has the tool-less last step.
+      lead.delegation ||
+      lead.deletedAt ||
+      lead.stopped ||
+      lead.userCancelled ||
+      lead.supersededBy ||
+      lead.followUp ||
+      !(lead.status === 'completed' || this.active.has(lead.id)) ||
+      // The user called this agent in this very message.
+      !lead.input.participants?.some((item) => item.kind === 'external' && item.thirdParty && item.id === agentId) ||
+      !conversation ||
+      conversation.deletedAt ||
+      conversation.archivedAt ||
+      conversation.incognito ||
+      !project ||
+      project.removedAt
+    )
+      return undefined;
+    // The user has moved on: a later message, or a resend of this one, is the conversation's task now.
+    const later = this.store
+      .conversationWorkflows(lead.conversationId)
+      .some((item) => item.id !== lead.id && !item.delegation && !item.deletedAt && item.createdAt >= lead.createdAt);
+    return later ? undefined : lead;
+  }
+  /** A late reply is combined once, whatever came of it; a pending one is settled here. */
+  private settleLateReply(id: string, state: 'combined' | 'not-combined') {
+    const workflow = this.store.get<Workflow>('workflow', id);
+    if (workflow?.lateReply?.state !== 'pending') return;
+    workflow.lateReply = { ...workflow.lateReply, state };
+    this.store.save('workflow', workflow.id, workflow.conversationId, workflow);
+  }
+  /**
    * The last step of a message that called web agents: once each of them has replied (or given up), one run with no
    * tools reads their replies, every participant's result and the coordinator's answer, and writes the final answer.
    * It is the only run that ever reads those replies. A called executor that can run tool-less writes it, else the
@@ -10828,7 +10948,11 @@ ${message.source === 'agent' ? '这是同一蜂群中的协作信息，不是用
         .conversationWorkflows(workflow.conversationId)
         .filter((child) => child.delegation?.parentId === workflow.id && !child.deletedAt && !child.delegation.review);
     if (!children().some(isWeb)) return;
+    // A reply that arrives after this round is combined with this same answer (see resumeLateExternalReply).
+    workflow.webCombine = { answerId: answer.id };
     let names = web.map((item) => item.name).join('、');
+    // Taken up again for a late reply: the step is run again in its place, keeping the runs it already had.
+    const earlier = workflow.plan.find((item) => item.id === 'combine-web-replies');
     const step: WorkflowStep = {
       id: 'combine-web-replies',
       title: `合并 ${names} 的回复`,
@@ -10837,19 +10961,26 @@ ${message.source === 'agent' ? '这是同一蜂群中的协作信息，不是用
       transport: 'auto',
       dependsOn: [],
       status: 'running',
-      runIds: [],
+      runIds: earlier?.runIds ?? [],
     };
-    workflow.plan.push(step);
+    if (earlier) workflow.plan[workflow.plan.indexOf(earlier)] = step;
+    else workflow.plan.push(step);
     workflow.activeStepId = step.id;
     workflow.phase = 'execute';
     const current = () => this.store.get<ConversationMessage>('message', answer.id) ?? answer;
+    // What the conversation shows: the coordinator's answer, or one combined before a late reply came in.
+    const shown = () =>
+      (workflow.finalMessageId && this.store.get<ConversationMessage>('message', workflow.finalMessageId)) || current();
+    // Parts whose reply came late and is read by this run; each is combined once, whatever the outcome.
+    let late: Workflow[] = [];
     const fallback = (reason: string) => {
       step.status = 'skipped';
-      const kept = current();
+      const kept = shown();
       kept.content = `${kept.content}\n\n${combineFailure(names, reason)}`;
       this.store.save('message', kept.id, kept.conversationId, kept);
       this.postContentRelayNotice(workflow, kept);
       this.scheduling(workflow, combineFailure(names, reason));
+      for (const child of late) this.settleLateReply(child.id, 'not-combined');
     };
     try {
       // Wait for web agents whose replies can return to the conversation.
@@ -10865,13 +10996,17 @@ ${message.source === 'agent' ? '这是同一蜂群中的协作信息，不是用
         this.assertRunning(signal);
         await new Promise((done) => setTimeout(done, 200));
       }
-      const { replies, members } = combineSources(children(), isWeb, (id) =>
+      const settled = children();
+      const { replies, members } = combineSources(settled, isWeb, (id) =>
         this.store.get<ConversationMessage>('message', id),
       );
+      late = settled.filter((child) => isWeb(child) && child.lateReply?.state === 'pending');
       const answered = [...new Set(replies.filter((reply) => reply.text).map((reply) => reply.name))];
       if (!answered.length) {
         // Nothing to combine: each web agent's own bubble says what happened to its part.
-        workflow.plan = workflow.plan.filter((item) => item !== step);
+        workflow.plan = earlier
+          ? workflow.plan.map((item) => (item === step ? earlier : item))
+          : workflow.plan.filter((item) => item !== step);
         workflow.activeStepId = workflow.plan.at(-1)?.id;
         return;
       }
@@ -10954,10 +11089,14 @@ ${message.source === 'agent' ? '这是同一蜂群中的协作信息，不是用
       combined.combinedFrom = answered;
       combined.untrustedContent = true;
       this.store.save('message', combined.id, combined.conversationId, combined);
-      const replaced = current();
-      replaced.replacedBy = combined.id;
-      this.store.save('message', replaced.id, replaced.conversationId, replaced);
+      // An answer combined before a late reply came in gives way to this one too.
+      const visible = shown();
+      for (const replaced of visible.id === answer.id ? [current()] : [current(), visible]) {
+        replaced.replacedBy = combined.id;
+        this.store.save('message', replaced.id, replaced.conversationId, replaced);
+      }
       workflow.finalMessageId = combined.id;
+      for (const child of late) this.settleLateReply(child.id, 'combined');
       this.postContentRelayNotice(workflow, combined);
       this.scheduling(workflow, `已把 ${names} 的回复和其他结果合成最终答复；协调者自己的答复在蜂群面板里。`);
     } catch (error) {

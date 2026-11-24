@@ -1485,6 +1485,16 @@ export type Workflow = {
    * task continues by itself when that job finishes. Nothing failed, so this is shown as waiting, not an error.
    */
   waitingOn?: { kind: 'media-analysis'; jobId: string; done: number; total: number };
+  /**
+   * A message that called web agents: the coordinator's own answer, which their replies are combined with in a last
+   * tool-less step. Kept so that a reply arriving after the round can still be combined, once.
+   */
+  webCombine?: { answerId: string };
+  /**
+   * A part given to an agent outside PugPort whose reply arrived after the part had settled unanswered (the Grok Bot
+   * routine stops waiting after 30 minutes). Recorded once, so a repeated callback never takes the part up again.
+   */
+  lateReply?: { messageId: string; at: string; state: 'pending' | 'combined' | 'not-combined' };
   /** Review mode: what the automatic reviewer of this result decided, and what was done about it. */
   review?: {
     round: number;
