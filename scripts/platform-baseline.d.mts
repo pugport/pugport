@@ -1,0 +1,17 @@
+export const ROOT: string;
+export const BASELINE: string;
+export const EXEMPT: string;
+export const PATTERNS: RegExp[];
+export type Hit = { line: number; text: string };
+export type Failure = { file: string; count: number; baseline: number; hits: Hit[] };
+export type Decrease = { file: string; count: number; baseline: number };
+export type Comparison = { ok: boolean; failures: Failure[]; decreases: Decrease[]; message: string; hint: string };
+export type Check = Comparison & { counts: Record<string, number>; totals: { files: number; hits: number } };
+export function stripComments(text: string, file?: string): string;
+export function platformHits(text: string, file?: string): Hit[];
+export function scanTree(root?: string): Record<string, Hit[]>;
+export function readBaseline(root?: string): Record<string, number>;
+export function totals(counts: Record<string, number>): { files: number; hits: number };
+export function compare(found: Record<string, Hit[]>, baseline: Record<string, number>): Comparison;
+export function checkBaseline(root?: string): Check;
+export function writeBaseline(root?: string, options?: { allowIncrease?: boolean }): Check & { written: boolean };

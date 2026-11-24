@@ -6,9 +6,9 @@ import {
   AttachmentScopeChanged,
   attachmentContentUrl,
   attachmentMimeType,
-  externalAttachmentWarning,
   filesFromTransfer,
   selectAttachmentFiles,
+  textOnlyRecipients,
   uploadDraftAttachments,
   type DraftAttachment,
 } from '../src/ui/attachments.ts';
@@ -26,14 +26,43 @@ const result = (id: string, name = 'fixture.png'): Attachment => ({
 const file = (name: string, type = 'application/octet-stream') => new File(['test'], name, { type });
 const sized = (name: string, size: number, type = 'application/octet-stream') => ({ name, size, type }) as File;
 
-test('external agent attachment preflight warns only for direct external requests with files', () => {
-  for (const id of ['muse', 'grok-bot']) {
-    assert.ok(externalAttachmentWarning(1, [{ kind: 'external', id, name: id }]));
-  }
-  assert.equal(externalAttachmentWarning(0, [{ kind: 'external', id: 'muse', name: 'Muse' }]), '');
-  assert.equal(externalAttachmentWarning(1, [{ kind: 'executor', id: 'x', name: 'X' }]), '');
-  assert.ok(externalAttachmentWarning(1, [], '@@Muse describe this'));
-  assert.equal(externalAttachmentWarning(1, [], '@Muse is interesting'), '');
+test('attachment preflight names the text-only agents an explicit, inferred, bound or mixed message reaches', () => {
+  const muse = { kind: 'external' as const, id: 'muse', name: 'Muse' };
+  const grok = { kind: 'external' as const, id: 'grok-bot', name: 'Grok Bot' };
+  const codex = { kind: 'executor' as const, id: 'codex', name: 'Codex' };
+  const ready = [{ id: 'muse' as const, name: 'Muse', enabled: true, available: true, added: true }];
+  const off = [{ ...ready[0]!, enabled: false }];
+  // Explicit: one called agent, or every one in a group.
+  assert.deepEqual(textOnlyRecipients(1, [muse], '@@Muse 看看这张图', []), { names: ['Muse'], mixed: false });
+  assert.deepEqual(textOnlyRecipients(1, [grok], '@@Grok Bot 看图', []), { names: ['Grok Bot'], mixed: false });
+  assert.deepEqual(textOnlyRecipients(2, [muse, grok], '@@Muse @@Grok Bot 比较', []), {
+    names: ['Muse', 'Grok Bot'],
+    mixed: false,
+  });
+  // Mixed: the agent gets the words, the executor still gets the files.
+  assert.deepEqual(textOnlyRecipients(1, [codex, muse], '@Codex @@Muse 各看一下', []), {
+    names: ['Muse'],
+    mixed: true,
+  });
+  // Inferred: typed @@ always reaches the agent; a leading request only a ready one.
+  assert.deepEqual(textOnlyRecipients(1, [], '@@Muse describe this', []), { names: ['Muse'], mixed: false });
+  assert.deepEqual(textOnlyRecipients(1, [], '让 Muse 解释这张图', ready), { names: ['Muse'], mixed: false });
+  assert.equal(
+    textOnlyRecipients(1, [], '让 Muse 解释这张图', off),
+    undefined,
+    'a disabled agent leaves it to routing',
+  );
+  assert.equal(textOnlyRecipients(1, [], '@Muse is interesting', ready), undefined);
+  // A chat bound to an agent sends it every message.
+  assert.deepEqual(textOnlyRecipients(1, [], '这张图是什么', [], 'grok-bot'), { names: ['Grok Bot'], mixed: false });
+  // File-capable recipients and messages without files are untouched.
+  assert.equal(textOnlyRecipients(0, [muse], '@@Muse 你好', ready), undefined);
+  assert.equal(textOnlyRecipients(1, [codex], '@Codex 看图', ready), undefined);
+  assert.equal(
+    textOnlyRecipients(1, [{ kind: 'device', id: 'device:a', name: 'Mac' }], '@@Mac 看图', ready),
+    undefined,
+  );
+  assert.equal(textOnlyRecipients(1, [], '看看这张图', ready), undefined);
 });
 
 test('attachment intake enforces file/image/count/total limits before reading bytes and allows ordinary documents', () => {
