@@ -4794,6 +4794,15 @@ kbd {
 .conversation-composer > .unavailable-runtime {
   margin: 0 0 10px;
 }
+.attachment-text-only {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  /* The composer's expand button sits in the top right corner. */
+  padding-inline-end: 42px;
+}
 
 .attachment-drop-hint {
   position: absolute;

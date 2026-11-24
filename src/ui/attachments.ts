@@ -1,6 +1,13 @@
 import type { Attachment } from '../shared/types';
 import type { CalledParticipant } from '../shared/participants';
-import { externalAgentCatalog, externalMention } from '../shared/external-agents';
+import {
+  externalAgentCatalog,
+  externalAgentIds,
+  externalInvocation,
+  externalMention,
+  type ExternalAgentId,
+  type ExternalAgentView,
+} from '../shared/external-agents';
 
 import { attachmentLimits } from '../shared/attachments';
 export { attachmentLimits } from '../shared/attachments';
@@ -24,16 +31,36 @@ export type DraftAttachment = {
   uploaded?: { conversationId: string; attachment: Attachment };
 };
 
-export function externalAttachmentWarning(count: number, called: readonly CalledParticipant[], text = '') {
-  return count &&
-    ((called.length === 1 && called[0]?.kind === 'external') ||
-      (!called.length &&
-        externalMention(
-          text,
-          Object.entries(externalAgentCatalog).map(([id, agent]) => ({ id, name: agent.name })),
-        )))
-    ? '外部智能体暂时只支持文字，请移除附件后再发送。'
-    : '';
+/**
+ * The external agents (text only) this message would reach without its attachments, picked the way the server picks
+ * them (routeTypedMessage, ExternalAgents.intercept): the chat's bound agent, the ones called by name, or one the text
+ * calls with `@@` or a leading request to a ready agent. `mixed`: other called participants still get the files.
+ */
+export function textOnlyRecipients(
+  count: number,
+  called: readonly CalledParticipant[],
+  text: string,
+  agents: readonly Pick<ExternalAgentView, 'id' | 'name' | 'enabled' | 'available' | 'added'>[],
+  boundAgentId?: ExternalAgentId,
+) {
+  if (!count) return undefined;
+  if (boundAgentId) return { names: [externalAgentCatalog[boundAgentId].name], mixed: false };
+  const typed = text.includes('@@')
+    ? externalMention(
+        text,
+        externalAgentIds.map((id) => ({ id, name: externalAgentCatalog[id].name })),
+      )
+    : externalInvocation(
+        text,
+        agents.filter((agent) => agent.enabled && agent.available && agent.added),
+      );
+  const named =
+    called.length > 1 || called[0]?.kind === 'external' || called[0]?.kind === 'device'
+      ? called.filter((item) => item.kind === 'external')
+      : typed
+        ? [typed]
+        : [];
+  return named.length ? { names: named.map((agent) => agent.name), mixed: named.length < called.length } : undefined;
 }
 
 export function attachmentMimeType(file: Pick<File, 'name' | 'type'>) {

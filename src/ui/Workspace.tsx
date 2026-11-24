@@ -97,7 +97,12 @@ import {
   participantStyle,
   type ParticipantIdentity,
 } from './ParticipantReply';
-import { externalAgentCatalog, type ExternalAgentId } from '../shared/external-agents';
+import {
+  externalAgentCatalog,
+  externalAgentIds,
+  externalInvocation,
+  type ExternalAgentId,
+} from '../shared/external-agents';
 import { useDevices } from './Devices';
 import { ServerEnroll } from './ServerEnroll';
 import { wakeInstabox } from './instabox';
@@ -268,10 +273,10 @@ import {
   attachmentContentUrl,
   attachmentSize,
   copyAttachmentImage,
-  externalAttachmentWarning,
   filesFromTransfer,
   isAttachmentImage,
   selectAttachmentFiles,
+  textOnlyRecipients,
   uploadDraftAttachments,
   pastedAttachmentFiles,
   type DraftAttachment,
@@ -2529,7 +2534,14 @@ export function ConversationWorkspace({
   // Read availability when opening the picker or a bound chat.
   const { agents: externalAgents, status: externalAgentsStatus } = useExternalAgents(
     api,
-    !!conversation?.defaultExternalAgentId || (!!mentionQuery && mentionQuery.tier === 2),
+    !!conversation?.defaultExternalAgentId ||
+      (!!mentionQuery && mentionQuery.tier === 2) ||
+      // Whether a request like "让 Muse 解释…" reaches Muse depends on Muse being ready.
+      (!!attachments.length &&
+        !!externalInvocation(
+          content,
+          externalAgentIds.map((id) => ({ id, name: externalAgentCatalog[id].name })),
+        )),
     !!conversation?.defaultExternalAgentId,
   );
   const boundAgentId = conversation?.defaultExternalAgentId;
@@ -2622,7 +2634,11 @@ export function ConversationWorkspace({
   );
   // Everyone this message calls, in the order they were picked; the list marks them instead of offering them again.
   const called = useMemo(() => draft.called ?? [], [draft.called]);
-  const attachmentWarning = externalAttachmentWarning(attachments.length, called, content);
+  const textOnly = textOnlyRecipients(attachments.length, called, content, externalAgents, boundAgentId);
+  const textOnlyNames = textOnly ? [new Intl.ListFormat(currentLocale()).format(textOnly.names)] : [];
+  const textOnlyNotice = textOnly?.mixed
+    ? '{0} 只能收文字，收不到附件；其他参与者照常可以用附件。'
+    : '{0} 只能收文字，收不到附件。要发附件，请换个参与者。';
   const calledDevice = called.length === 1 && called[0]?.kind === 'device' ? called[0] : undefined;
   const selectedDevice = devices.find((device) => `${deviceMentionPrefix}${device.id}` === calledDevice?.id);
   const deviceFolder = calledDevice ? (draft.deviceFolder?.trim() ?? '') : '';
@@ -3386,12 +3402,15 @@ export function ConversationWorkspace({
       inputRef.current?.setSelectionRange(caret, caret);
     });
   }
-  function submitComposer(ctrlKey = false) {
+  function submitComposer(ctrlKey = false, textOnlyChosen = false) {
     const queue = running ? (autoSteer ? ctrlKey : !ctrlKey) : undefined;
-    return emptyComposer ? (queue ? undefined : steerEmptyComposer()) : send(queue);
+    return emptyComposer ? (queue ? undefined : steerEmptyComposer()) : send(queue, undefined, textOnlyChosen);
   }
-  /** `typed` is the composer's text, or a question card's answer (only offered while the composer is empty). */
-  async function send(queue?: boolean, typed = content) {
+  /**
+   * `typed` is the composer's text, or a question card's answer (only offered while the composer is empty).
+   * `textOnlyChosen`: the user chose to send a text-only agent the words alone, without the files.
+   */
+  async function send(queue?: boolean, typed = content, textOnlyChosen = false) {
     if (typed.trim() === '/bug') {
       openProblemReport();
       changeDraft(scope, (previous) => ({ ...previous, content: '' }));
@@ -3416,10 +3435,12 @@ export function ConversationWorkspace({
       notify({ tone: 'error', message: '直接搜索暂不支持文件或图片附件，请先移除附件。' });
       return;
     }
-    if (!directSearch && attachmentWarning) {
-      notify({ tone: 'error', message: attachmentWarning });
+    // A mixed group still goes out: the server gives the agent the words and the others the files.
+    if (!directSearch && textOnly && !textOnly.mixed && !textOnlyChosen) {
+      notify({ tone: 'error', message: textOnlyNotice, names: textOnlyNames });
       return;
     }
+    const outgoing = textOnly && !textOnly.mixed ? [] : attachments;
     if (unavailableProfile) {
       notify({ tone: 'error', message: '所选路由方案不可用，请选择自动或另一套路由方案。' });
       return;
@@ -3500,8 +3521,8 @@ export function ConversationWorkspace({
     }
     sendingRef.current = true;
     // Only uploading files keeps the composer busy; a plain message goes out without a wait.
-    setSending(attachments.length > 0);
-    setSendingLabel(attachments.length ? '正在上传附件…' : '');
+    setSending(outgoing.length > 0);
+    setSendingLabel(outgoing.length ? '正在上传附件…' : '');
     const capturedScope = scope;
     const isCurrent = () => mounted.current && scopeRef.current === capturedScope;
     const text = typed.trim() || (quotes.length ? '' : '请查看所附文件或图片，并说明内容与可协助的事项。');
@@ -3515,7 +3536,7 @@ export function ConversationWorkspace({
         scope: capturedScope,
         conversationId: conversation?.id ?? draft.createdConversation?.id,
         content: typed.trim(),
-        images: attachments.flatMap((item) => (item.previewUrl ? [item.previewUrl] : [])),
+        images: outgoing.flatMap((item) => (item.previewUrl ? [item.previewUrl] : [])),
         quotes: sentQuotes(quotes),
         sentAt: new Date().toISOString(),
         snapshot,
@@ -3633,7 +3654,7 @@ export function ConversationWorkspace({
       const targetId = target.id;
       if (!conversation) saveComposerSelection(targetId, remembered);
       sentConversation = target;
-      const attachmentIds = await uploadDraftAttachments(api, targetId, attachments, isCurrent, (id, attachment) => {
+      const attachmentIds = await uploadDraftAttachments(api, targetId, outgoing, isCurrent, (id, attachment) => {
         snapshot.attachments = snapshot.attachments.map((item) =>
           item.id === id ? { ...item, uploaded: { conversationId: targetId, attachment } } : item,
         );
@@ -5252,10 +5273,21 @@ export function ConversationWorkspace({
                     {execution.label}。请选择其他执行器或自动调度后发送。
                   </p>
                 )}
-                {!directSearch && attachmentWarning && (
-                  <p className="unavailable-runtime" role="alert">
-                    {attachmentWarning}
-                  </p>
+                {!directSearch && textOnly && (
+                  <div className="unavailable-runtime attachment-text-only" role={textOnly.mixed ? 'status' : 'alert'}>
+                    <span translate="no">{withNames(textOnlyNotice, textOnlyNames)}</span>
+                    {!textOnly.mixed && (
+                      <button
+                        type="button"
+                        className="button ghost tiny"
+                        translate="no"
+                        disabled={sending || (!content.trim() && !quotes.length)}
+                        onClick={() => void submitComposer(false, true)}
+                      >
+                        {withNames('只把文字发给 {0}', textOnlyNames)}
+                      </button>
+                    )}
+                  </div>
                 )}
                 {attachments.length > 0 && (
                   <div className="attachment-drafts" aria-label="待发送附件">
