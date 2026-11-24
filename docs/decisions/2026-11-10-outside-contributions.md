@@ -10,3 +10,5 @@ Reason: outside contributions are a purpose of opening the repository, and the e
 Scope: the automatic review is advice. It never merges, approves a workflow run, or triggers a build, and a passing review does not replace the owner's own reading. Outside code never runs on the owner's computers or on a self-hosted runner. The reviewing model gets no tools, no network and no write access. Contributors accept the contribution rules, the code of conduct and the contributor agreement. Restricting pull requests to collaborators and fetching from forks instead stays a later option. The contributor agreement mechanism (CLA assistant, bot-reported status or DCO) is not decided here.
 
 Replaces: none. See the [contributing guide](../../.github/CONTRIBUTING.md).
+
+Partly replaced on 2026-11-22: for pull requests that meet [scheduled merges](2026-11-22-scheduled-merges.md), the owner's maintainer agent reviews, approves the hosted run and merges.

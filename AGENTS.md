@@ -27,7 +27,7 @@ These rules apply to contributors and AI agents. Follow the owner's explicit tas
 - State the exact verification commands and their actual results, the OS tested, and everything not verified. Skipped tests are not passes. Attach screenshots for UI changes.
 - Label AI-made PRs `ai-made` and name the tool in the PR. Otherwise state `none`.
 - Never commit secrets, credentials, personal data, private project content, or unredacted logs. Use synthetic test data. Never redeem real reset cards in tests; automatic redemption stays off unless the owner turns it on.
-- Only the owner merges. Agents never merge, publish, or change repository settings. A label alone is not authorization.
+- Only the owner merges. The one exception is the scheduled merges by the owner's maintainer agent described in [this decision](docs/decisions/2026-11-22-scheduled-merges.md). Agents never publish or change repository settings. A label alone is not authorization.
 - Request an owner decision with `needs-owner-ruling`. Record the owner's decision under [docs/decisions/](docs/decisions/README.md), then replace that label with `owner-ruled`. Respect existing decisions within their scope.
 - Push authorized changes to a task branch and open a PR. Do not push directly to `main` or force-push a shared branch. Fetch the current `main` before integrating work from another machine, preserve its commits, and verify the combined result. Do not commit, push, or open a PR without task authorization.
 - Tracked application source and default checks must not depend on ignored or uncommitted files. Private maintenance tools use the separate command documented in [Contributing](.github/CONTRIBUTING.md).
