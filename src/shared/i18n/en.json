@@ -6311,6 +6311,7 @@
   "这台电脑": "This computer",
   "这台电脑上没找到": "Not found on this computer: ",
   "这台电脑上没找到 Cursor": "Cursor wasn't found on this computer",
+  "这台电脑上没有找到 Grok Bot 桌面应用，回复送不回来。请先安装 Grok Bot 再重试。": "The Grok Bot desktop app isn't installed on this computer, so replies can't reach you. Install Grok Bot and retry.",
   "这台电脑同时最多运行": "This computer runs at most",
   "这台电脑同时最多运行 {0} 个执行器（按内存和处理器估算），等前面的结束后自动开始。": "This computer runs at most {0} executors at once (estimated from memory and processor); it starts automatically when earlier ones finish.",
   "这台电脑的系统不支持移到回收站。": "This computer's system can't move items to the Recycle Bin.",
@@ -10130,5 +10131,9 @@
   "这台电脑没有它的 SSH 配置，这台服务器也还没开通账号直连：在一台能 SSH 登录它的电脑上打开 PugPort，会自动开通。": "This computer has no SSH configuration for it, and account access to this server is not set up yet. Open PugPort on a computer that can sign in to it over SSH; account access is set up automatically.",
   "{0} 只能收文字，收不到附件。要发附件，请换个参与者。": "{0} can only receive text, not attachments. To send the attachments, choose another participant.",
   "{0} 只能收文字，收不到附件；其他参与者照常可以用附件。": "{0} can only receive text, not attachments. The other participants can still use them.",
-  "只把文字发给 {0}": "Send only the text to {0}"
+  "只把文字发给 {0}": "Send only the text to {0}",
+  "{0} 的回复晚到了，已收下（没有重新发送）。": "{0}'s reply arrived late and was accepted (nothing was sent again).",
+  "{0} 的回复晚到了，正在把它合进这条答复…": "{0}'s reply arrived late; combining it into this answer…",
+  "的回复晚到了，已收下（没有重新发送）。": "'s reply arrived late and was accepted (nothing was sent again).",
+  "的回复晚到了，正在把它合进这条答复…": "'s reply arrived late; combining it into this answer…"
 }

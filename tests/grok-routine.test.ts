@@ -13,7 +13,7 @@ import {
   validGrokWebhook,
 } from '../src/server/external-agents/grok-routine.ts';
 import { ExternalAgents } from '../src/server/external-agents/service.ts';
-import { grokDesktopRequiredNote } from '../src/server/external-agents/grok-desktop.ts';
+import { grokDesktopMissingNote, grokDesktopRequiredNote } from '../src/server/external-agents/grok-desktop.ts';
 import { secretsDirectory } from '../src/server/api-providers.ts';
 import { appDirs } from '../src/server/platform/dirs.ts';
 import { WorkspaceStore } from '../src/server/workspace-store.ts';
@@ -23,6 +23,7 @@ import { participantsNote, resolveParticipants } from '../src/server/participant
 import { findNode, nextTurn, uiBundle, uiHarness } from './helpers/ui-harness.ts';
 import { mentionItems } from '../src/ui/Mentions.tsx';
 import { listenForFetch } from './helpers/fetch-port.ts';
+import { fakeHost } from './helpers/fake-host.ts';
 
 const url = 'https://api2.cursor.sh/automations/webhook/synthetic-id';
 const key = 'crsr_SYNTHETIC_SECRET_1234';
@@ -332,6 +333,10 @@ for (const scenario of [
   'non-Windows',
   'main starts',
   'main fails',
+  'main missing',
+  'main unavailable',
+  'mac running',
+  'mac starts',
 ] as const) {
   test(`routine desktop preflight: ${scenario}`, async (t) => {
     const dir = temporary(t);
@@ -348,6 +353,18 @@ for (const scenario of [
     let clock = 0;
     let started = false;
     const events: string[] = [];
+    const isRunning = async () => {
+      events.push('check');
+      if (scenario === 'check fails') throw new Error('synthetic process check failure');
+      return scenario.endsWith('running') || (scenario.endsWith('starts') && started && clock >= 2000);
+    };
+    // A Mac answers through LaunchServices' list of running apps.
+    const mac = fakeHost('darwin', {
+      run: async (file) => {
+        assert.equal(file, '/usr/bin/lsappinfo');
+        return { stdout: (await isRunning()) ? 'ASN:0x0-0x1-"Grok Bot":\n' : '', stderr: '' };
+      },
+    });
     const agents = new ExternalAgents(
       {
         store,
@@ -359,19 +376,17 @@ for (const scenario of [
         autoPoll: false,
         routineStore,
         routineDesktop: {
-          platform: scenario === 'non-Windows' ? 'linux' : 'win32',
-          isRunning: async () => {
-            events.push('check');
-            if (scenario === 'check fails') throw new Error('synthetic process check failure');
-            return scenario === 'running' || (['starts', 'main starts'].includes(scenario) && started && clock >= 2000);
-          },
-          ...(!scenario.startsWith('main ') && {
-            start: async () => {
-              events.push('start');
-              if (scenario === 'start fails') throw new Error('synthetic launch failure');
-              started = true;
-            },
-          }),
+          ...(scenario.startsWith('mac ')
+            ? { host: mac }
+            : { platform: scenario === 'non-Windows' ? 'linux' : 'win32', isRunning }),
+          ...(!scenario.startsWith('main ') &&
+            !scenario.startsWith('mac ') && {
+              start: async () => {
+                events.push('start');
+                if (scenario === 'start fails') throw new Error('synthetic launch failure');
+                started = true;
+              },
+            }),
           now: () => clock,
           sleep: async (ms) => {
             events.push(`wait:${ms}`);
@@ -392,6 +407,8 @@ for (const scenario of [
             assert.equal(timeout, 10_000);
             events.push('start');
             started = true;
+            if (scenario === 'main missing') return { ok: false, code: 'not-installed' };
+            if (scenario === 'main unavailable') return { ok: false, code: 'unavailable' };
             return { ok: scenario !== 'main fails' };
           },
         },
@@ -407,18 +424,24 @@ for (const scenario of [
     })!;
     await nextTurn();
     const message = store.get<ConversationMessage>('message', sent.reply.id)!;
-    if (['start fails', 'never appears', 'check fails', 'main fails'].includes(scenario)) {
+    if (
+      ['start fails', 'never appears', 'check fails', 'main fails', 'main missing', 'main unavailable'].includes(
+        scenario,
+      )
+    ) {
+      // Only a start that main reports as a missing app names it; every other failure keeps the usual note.
+      const note = scenario === 'main missing' ? grokDesktopMissingNote : grokDesktopRequiredNote;
       assert.equal(events.includes('post'), false);
       assert.equal(message.externalAgent?.status, 'needs-user');
-      assert.equal(message.externalAgent?.note, grokDesktopRequiredNote);
-      assert.equal(message.content, grokDesktopRequiredNote);
+      assert.equal(message.externalAgent?.note, note);
+      assert.equal(message.content, note);
       assert.equal(message.externalAgent?.routine, undefined);
       if (scenario === 'never appears') assert.equal(clock, 20_000);
     } else {
       assert.equal(message.externalAgent?.status, 'working');
-      if (scenario === 'running') assert.deepEqual(events, ['check', 'post']);
+      if (scenario.endsWith('running')) assert.deepEqual(events, ['check', 'post']);
       if (scenario === 'non-Windows') assert.deepEqual(events, ['post']);
-      if (scenario === 'starts' || scenario === 'main starts') {
+      if (scenario.endsWith('starts')) {
         assert.deepEqual(events, [
           'check',
           'start',

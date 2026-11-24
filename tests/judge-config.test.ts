@@ -72,7 +72,16 @@ test('judge verdict maps the fixed words and checks the commit', () => {
   assert.equal(parseVerdict('PASS @ abcdef', sha).verdict, 'invalid');
   assert.equal(parseVerdict(`pass @ ${sha}`, sha).verdict, 'invalid');
   assert.equal(parseVerdict(`MAYBE @ ${sha}`, sha).verdict, 'invalid');
-  assert.equal(parseVerdict(`  PASS @ ${sha}`, sha).verdict, 'invalid');
+  // Spaces and tabs before and after the verdict are accepted presentation; blank lines before it stay accepted.
+  assert.equal(parseVerdict(`  PASS @ ${sha}`, sha).verdict, 'pass');
+  assert.deepEqual(parseVerdict(`  PASS @ ${sha}`, sha), { verdict: 'pass', firstLine: `PASS @ ${sha}` });
+  assert.equal(parseVerdict(`\tFAIL @ ${sha}  `, sha).verdict, 'fail');
+  assert.deepEqual(parseVerdict(`\tFAIL @ ${sha}  `, sha), { verdict: 'fail', firstLine: `FAIL @ ${sha}` });
+  assert.deepEqual(parseVerdict(`PASS @ ${sha}  \nbody`, sha), { verdict: 'pass', firstLine: `PASS @ ${sha}` });
+  assert.equal(parseVerdict(`**PASS @ ${sha}**`, sha).verdict, 'invalid');
+  assert.equal(parseVerdict('`' + `PASS @ ${sha}` + '`', sha).verdict, 'invalid');
+  assert.equal(parseVerdict(`> PASS @ ${sha}`, sha).verdict, 'invalid');
+  assert.equal(parseVerdict(`- PASS @ ${sha}`, sha).verdict, 'invalid');
   assert.deepEqual(
     parseVerdict(`\r\n  \r\nFAIL @ ${sha.slice(0, 12)}\r\nwhy\r\nJUDGE: first\r\nJUDGE: context=zero\r\n`, sha),
     {

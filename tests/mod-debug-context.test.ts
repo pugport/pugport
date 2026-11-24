@@ -74,8 +74,13 @@ for (const mode of ['chat', 'build'] as const)
     };
     assert.ok(!(await turn('Build a pomodoro timer')).includes(block), 'nothing happened yet');
     const record = f.workspace.modWorkspaces.forConversation(conversation.id)!;
+    // One millisecond after the first turn started: strictly newer than that turn, and older than the second turn,
+    // which starts after at least one 20 ms poll in finished(). Sampling Date.now() here could land on the second turn.
+    const startedAt = Math.max(
+      ...f.workspace.store.conversationWorkflows(conversation.id).map((w) => Date.parse(w.createdAt)),
+    );
     f.workspace.modWorkspaces.addDiagnostics(record.id, [
-      line(Date.now() + 1, 'TypeError: Cannot read properties of undefined (line 88:3)'),
+      line(startedAt + 1, 'TypeError: Cannot read properties of undefined (line 88:3)'),
     ]);
     const second = await turn('It does not start');
     assert.equal(second.split(block).length, 2);

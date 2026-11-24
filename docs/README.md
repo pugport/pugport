@@ -25,6 +25,8 @@ Find setup instructions, development guides and release records here. Start with
 ## Releases
 
 - [Dev log](https://pugport.dev) — release notes and build notes.
+- [Windows releases](RELEASING-WINDOWS.md) — the shipped Windows per-user installer and portable review builds.
+- [Mac releases](RELEASING-MAC.md) — the Apple Silicon release build and signed update feed.
 - [Acknowledgements](ACKNOWLEDGEMENTS.md).
 - [Third party notices](../THIRD_PARTY_NOTICES.md) — attribution and distribution requirements.
 - [npm license materials](../licenses/npm/README.md). Earlier release records keep their original bundled-component scope; the current app no longer bundles the Magpie gateway.

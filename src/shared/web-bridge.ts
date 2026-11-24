@@ -59,7 +59,8 @@ export type WebAgentResult = {
   authenticated?: boolean;
   /**
    * human-check: a captcha or verification page; login: a sign-in wall; not-detected: no chat box found;
-   * not-sent: the text could not be put in or sent; closed: the user closed the window meanwhile.
+   * not-sent: the text could not be put in or sent; closed: the user closed the window meanwhile;
+   * not-installed: the desktop app to start is not installed.
    */
   code?:
     | 'human-check'
@@ -72,6 +73,7 @@ export type WebAgentResult = {
     | 'replaced'
     | 'lost'
     | 'unavailable'
+    | 'not-installed'
     | 'error';
   limit?: { reason: string; observedAt: string; resetsAt: string | null };
   grokDiagnostic?: import('./grok-usage.ts').GrokUsageDiagnostic;
