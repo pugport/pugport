@@ -54,6 +54,8 @@ for (const file of [
   ...files(join(root, 'src', 'shared')),
   ...files(join(root, 'src', 'server')),
   ...files(join(root, 'src', 'electron')),
+  // Only the terminal command's two help texts are translated; its other messages are not interface keys.
+  join(root, 'src', 'cli', 'help.ts'),
 ]) {
   const ast = parse(readFileSync(file, 'utf8'), {
     sourceType: 'module',

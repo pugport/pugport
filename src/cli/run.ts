@@ -1,6 +1,7 @@
 /** What each `pugport` command does; pugport.ts is only the entry point, so tests can import this. */
 import { networkInterfaces } from 'node:os';
 import { APP_VERSION } from '../shared/identity.ts';
+import type { Locale } from '../shared/i18n/index.ts';
 import { currentHost } from '../server/platform/host.ts';
 import type { CliCommand } from './args.ts';
 import { runAsk, type Output } from './ask.ts';
@@ -8,6 +9,7 @@ import { runWait } from './wait.ts';
 import { TerminalChat } from './chat.ts';
 import { PugPortClient } from './client.ts';
 import { cliHelp } from './help.ts';
+import { cliLocale } from './locale.ts';
 import { appRoot, desktopLaunchPlan, ensureBackend, launchDesktop } from './launch.ts';
 import { nodeBackendPort, runNode } from './node.ts';
 import { runNodeAdd } from '../server/node-enroll.ts';
@@ -30,6 +32,8 @@ export async function run(
     stdin?: AsyncIterable<string | Buffer>;
     stdout?: Output;
     stderr?: Output;
+    /** The help language; by default the terminal's (see cliLocale). */
+    locale?: Locale;
   } = {},
 ): Promise<number> {
   const stdout = deps.stdout ?? process.stdout;
@@ -41,7 +45,7 @@ export async function run(
       err(`${command.message}\n`);
       return 2;
     case 'help':
-      out(cliHelp(createTheme(stdout)));
+      out(cliHelp(createTheme(stdout), deps.locale ?? cliLocale(process.env)));
       return 0;
     case 'version':
       out(`${APP_VERSION}\n`);
@@ -165,6 +169,6 @@ export async function run(
   }
   return new TerminalChat(
     { cwd: process.cwd(), write: command.write, resume: command.continueLast },
-    { client, theme: createTheme(process.stdout), openDesktop },
+    { client, theme: createTheme(process.stdout), openDesktop, locale: deps.locale ?? cliLocale(process.env) },
   ).run();
 }
