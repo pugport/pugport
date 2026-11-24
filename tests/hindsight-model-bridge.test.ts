@@ -265,14 +265,22 @@ test('schema-invalid responses fail closed and still consume the reserved call',
 });
 
 test('concurrent model requests are bounded and timeout cancels the ordinary run', async () => {
-  const f = await fixture({ delay: true, modelTimeoutMs: 100 });
+  // With the default timeout only cancelJob ends the first call, so a slow runner cannot free it before the second.
+  const bounded = await fixture({ delay: true });
   try {
-    await f.bridge.withJob(f.job, async () => {
-      const first = f.request();
-      while (!f.calls.length) await new Promise((resolve) => setTimeout(resolve, 5));
-      assert.equal((await f.request()).status, 429);
+    await bounded.bridge.withJob(bounded.job, async () => {
+      const first = bounded.request();
+      while (!bounded.calls.length) await new Promise((resolve) => setTimeout(resolve, 5));
+      assert.equal((await bounded.request()).status, 429);
+      bounded.bridge.cancelJob();
       assert.equal((await first).status, 504);
     });
+  } finally {
+    await bounded.close();
+  }
+  const f = await fixture({ delay: true, modelTimeoutMs: 100 });
+  try {
+    await f.bridge.withJob(f.job, async () => assert.equal((await f.request()).status, 504));
     assert.deepEqual(f.cancelled, ['run-1']);
     assert.equal((await f.request()).status, 403);
   } finally {

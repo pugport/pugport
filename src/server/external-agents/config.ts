@@ -20,6 +20,11 @@ const agentSchema = z.object({
   botId: z.string().max(200).optional(),
   usageEnabled: z.boolean().optional(),
   usageSource: z.enum(['separate', 'cursor-editor']).optional(),
+  /** Grok Bot: the usage account's hash the user confirmed as their chat account, for the current usage source. */
+  usageAccountConfirmed: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   usageLoginCreated: z.boolean().optional(),
   usageAttemptedAt: z.string().datetime().optional(),
   usageSignedOut: z.boolean().optional(),

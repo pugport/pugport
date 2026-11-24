@@ -11,6 +11,8 @@ import {
   grokDiagnosticLine,
   grokDiagnosticMessages,
   grokPlanMismatch,
+  grokUsageAccountLine,
+  type GrokUsageAccount,
 } from '../src/shared/grok-usage.ts';
 import { webAgentPartition } from '../src/shared/web-bridge.ts';
 import { grokBotUsageAgentId, grokBotUsagePage } from '../src/shared/external-agents.ts';
@@ -704,6 +706,89 @@ test('unknown usage still shows one diagnostic line and a mismatched plan explai
     createElement(WebAgentQuotaRows, { agents: [reading({ quota: parseGrokBotUsage(payload) })], now }),
   );
   assert.ok(!superGrok.includes(grokPlanMismatch));
+});
+
+test('the Grok usage account shows in settings and on the card; only an identified account not yet confirmed can be confirmed', async () => {
+  const states: Record<string, GrokUsageAccount> = {
+    'no identity': { status: 'unverified' },
+    unconfirmed: { status: 'unverified', fingerprint: 'a'.repeat(64) },
+    matches: { status: 'matches', fingerprint: 'a'.repeat(64) },
+    different: { status: 'different', fingerprint: 'b'.repeat(64) },
+  };
+  const button = /<button([^>]*)>这是我在 Grok Bot 里用的账号<\/button>/;
+  for (const [name, usageAccount] of Object.entries(states)) {
+    const line = grokUsageAccountLine(usageAccount);
+    const agent = reading({ usageAccount });
+    const confirmable = name === 'unconfirmed' || name === 'different';
+    for (const html of [
+      renderToStaticMarkup(createElement(GrokBotControls, { agent, onPatch() {} })),
+      renderToStaticMarkup(createElement(WebAgentQuotaRows, { agents: [agent], now, onConfirmAccount() {} })),
+    ]) {
+      assert.ok(html.includes(line), name);
+      assert.equal(html.match(button)?.[1].includes('disabled'), confirmable ? false : undefined, name);
+    }
+    for (const compact of [false, true]) {
+      const card = renderToStaticMarkup(createElement(WebAgentQuotaRows, { agents: [agent], now, compact }));
+      // Another account's usage is an error in both layouts; the other states and the button are on the full card.
+      assert.equal(card.includes(line), name === 'different' || !compact, `${name}, compact: ${compact}`);
+      if (name === 'different' && !compact) assert.ok(card.includes(`usage-error">${line}`));
+      if (compact) assert.doesNotMatch(card, button);
+    }
+  }
+  const note = (node: UiNode) => node.type?.name === 'GrokUsageAccountNote';
+  const h = uiHarness(await uiBundle('src/ui/ExternalAgents.tsx'));
+  const patches: unknown[] = [];
+  findNode(
+    h.render('GrokBotControls', {
+      agent: reading({ usageAccount: states.different }),
+      onPatch: (body: unknown) => patches.push(body),
+    }),
+    note,
+  )!.props.onConfirm();
+  assert.deepEqual(JSON.parse(JSON.stringify(patches)), [{ usageAccountConfirmed: 'b'.repeat(64) }]);
+  const confirmed: unknown[] = [];
+  findNode(
+    h.render('WebAgentQuotaRows', {
+      agents: [reading({ usageAccount: states.unconfirmed })],
+      now,
+      onConfirmAccount: (item: ExternalAgentView) => confirmed.push(item.usageAccount?.fingerprint),
+    }),
+    note,
+  )!.props.onConfirm();
+  assert.deepEqual(confirmed, ['a'.repeat(64)]);
+  h.unmount();
+  const plain = renderToStaticMarkup(createElement(WebAgentQuotaRows, { agents: [reading()], now }));
+  assert.ok(
+    Object.values(states).every((state) => !plain.includes(grokUsageAccountLine(state))),
+    'no reading, no account line',
+  );
+
+  const unconfirmed = reading({ usageAccount: states.unconfirmed });
+  const calls: unknown[] = [];
+  const api = async (path: string, body?: unknown, method?: string) => {
+    calls.push([path, body, method]);
+    return { agents: [method === 'PATCH' ? reading({ usageAccount: states.matches }) : unconfirmed] };
+  };
+  const page = uiHarness(await uiBundle('src/ui/ExternalAgents.tsx'));
+  page.render('WebAgentQuotas', { api, now });
+  await nextTurn();
+  const rows = findNode(
+    page.render('WebAgentQuotas', { api, now }),
+    (node) => node.type?.name === 'WebAgentQuotaRows',
+  )!;
+  await rows.props.onConfirmAccount(unconfirmed);
+  await nextTurn();
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))), [
+    '/api/external-agents/grok-bot',
+    { usageAccountConfirmed: 'a'.repeat(64) },
+    'PATCH',
+  ]);
+  const after = findNode(
+    page.render('WebAgentQuotas', { api, now }),
+    (node) => node.type?.name === 'WebAgentQuotaRows',
+  )!;
+  assert.equal(after.props.agents[0].usageAccount.status, 'matches', 'the card shows the confirmed reading');
+  page.unmount();
 });
 
 test('empty Grok cards explain login and human checks outside the details in both layouts', () => {

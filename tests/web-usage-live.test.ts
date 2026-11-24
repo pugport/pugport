@@ -472,17 +472,76 @@ test('Muse learns a separate settings route and reloads its hidden DOM every ten
   f.monitor.close();
 });
 
-test('in-place settings keep visible DOM capture and never guess a hidden route or retain query tokens', async () => {
+test('a same-page usage panel is never a route or a POST replay; its kept reading goes stale until the panel reopens', async () => {
   const f = fixture();
+  // The bridge reconfigures with the agent's home address on every poll, while the chat sits at another address.
+  const poll = () => f.monitor.configure(true, undefined, '', `${origin}/`, 'synthetic');
+  poll();
+  f.text('Chat PRIVATE_CHAT');
+  await f.monitor.capture(true);
+  f.tick(3000);
+  await f.monitor.capture();
+  poll();
+  // Settings open over the chat without changing the address; the panel's numbers arrive by POST.
+  f.text(muse);
+  await f.response(
+    'graphql',
+    {
+      data: {
+        weekly: { used_percent: 87, reset_at: parseWebUsage(muse, now).windows[0]!.resetsAt },
+        extra: { used_percent: 0, remaining_tokens: 25.9e9 },
+      },
+    },
+    `${origin}/graphql`,
+    'POST',
+  );
+  await f.monitor.capture(true);
+  const first = f.monitor.result();
+  assert.equal(first.usageUrl, undefined, 'reloading the chat address would not show the panel');
+  assert.deepEqual(first.signatures ?? [], []);
+  assert.deepEqual(f.bodyReads, [], 'POST bodies are neither read nor kept for replay');
+  assert.equal(first.quota!.balances![0]!.remainingTokens, 25.9e9);
   f.text('Chat');
   await f.monitor.capture(true);
-  f.text(muse);
-  await f.monitor.capture(true);
-  assert.equal(f.monitor.result().usageUrl, undefined);
   f.visible(false);
   f.tick(webUsageRefreshMs);
-  await f.monitor.refresh();
-  assert.equal(f.reloads.length, 0);
+  await f.monitor.refresh(true);
+  await f.monitor.refresh(false, true);
+  assert.deepEqual([f.reloads, f.calls], [[], []]);
+  assert.deepEqual(f.monitor.result().quota, first.quota, 'the last valid reading survives the closed panel');
+  const agent: ExternalAgentView = {
+    id: 'muse',
+    name: 'Muse',
+    kind: 'web',
+    description: '',
+    enabled: true,
+    available: true,
+    quota: f.monitor.result().quota,
+    usageSignatures: [],
+  };
+  const card = renderToStaticMarkup(
+    createElement(WebAgentQuotaRows, { agents: [agent], now: f.now(), onRead: () => undefined }),
+  );
+  for (const pattern of [/上次读数/, /aria-label="Muse 读取用量"/, /设置 → 通用 → 使用情况 即可刷新/])
+    assert.match(card, pattern);
+  assert.doesNotMatch(card, /每 10 分钟自动刷新/);
+  f.visible(true);
+  f.text(muse.replace('87%', '90%').replace('259 亿', '250 亿'));
+  await f.monitor.capture(true);
+  const reopened = f.monitor.result().quota!;
+  assert.equal(reopened.windows[0]!.usedPercent, 90);
+  assert.equal(reopened.balances![0]!.remainingTokens, 25e9);
+  assert.equal(reopened.observedAt, new Date(f.now()).toISOString());
+  assert.equal(f.monitor.result().usageUrl, undefined);
+  // A separate route still loading at the first capture is still learned.
+  f.url(`${origin}/settings/usage`);
+  f.text('Loading');
+  f.tick(3000);
+  await f.monitor.capture(true);
+  poll();
+  f.text(muse);
+  await f.monitor.capture(true);
+  assert.equal(f.monitor.result().usageUrl, `${origin}/settings/usage`);
   for (const route of [
     `${origin}/settings?csrf=SECRET`,
     `${origin}/settings#token=SECRET`,

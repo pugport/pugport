@@ -31,10 +31,10 @@ export function parseSs(output: string, client: string, remotePort: number, loca
   }
   return candidates(matches);
 }
-/** A macOS netstat endpoint, "127.0.0.1.4317" (the port after the last dot), as "127.0.0.1:4317". */
+/** A macOS endpoint, "127.0.0.1.4317" (netstat, nettop tcp6) or "127.0.0.1:4317" (nettop tcp4), as "127.0.0.1:4317". */
 function darwinEndpoint(address: string | undefined) {
-  const dot = address?.lastIndexOf('.') ?? -1;
-  return dot < 0 ? '' : `${address!.slice(0, dot).replace(/^::ffff:/i, '')}:${address!.slice(dot + 1)}`;
+  const match = /^(.*)[.:](\d+)$/.exec(address ?? '');
+  return match ? `${match[1]!.replace(/^::ffff:/i, '')}:${match[2]}` : '';
 }
 /**
  * macOS `netstat -anv -p tcp`: the client end of the loopback connection, owned by the process in the `pid` column
@@ -69,6 +69,29 @@ export function parseDarwinNetstat(output: string, client: string, remotePort: n
           ?.replace(/^.*:/, '')
       : fields[column];
     matches.push(Number(owner));
+  }
+  return candidates(matches);
+}
+/**
+ * macOS `nettop -L 1 -n -m tcp -t loopback -J state`: a "name.pid" row for each process, followed by one
+ * "tcp4 local<->remote" row per socket it owns, each ending in the state column.
+ */
+export function parseNettop(output: string, client: string, remotePort: number, localPort: number): number[] {
+  let pid: number | undefined;
+  const matches: number[] = [];
+  for (const line of output.split(/\r?\n/)) {
+    // Dropping the state column from the end keeps a process name that contains a comma whole.
+    const field = line.replace(/,[^,]*,?$/, '');
+    const socket = /(?:^|,)tcp\d* (\S+)<->(\S+)$/.exec(field);
+    if (!socket) {
+      const owner = /\.(\d+)$/.exec(field);
+      pid = owner ? Number(owner[1]) : undefined;
+    } else if (
+      pid !== undefined &&
+      darwinEndpoint(socket[1]) === `${client}:${remotePort}` &&
+      darwinEndpoint(socket[2]) === `127.0.0.1:${localPort}`
+    )
+      matches.push(pid);
   }
   return candidates(matches);
 }
@@ -165,13 +188,26 @@ export async function executorCaller(options: {
         return found(parseNetstat(connections, client, remotePort!, localPort!)).map((pid) => walkTable(table, pid));
       }
       if (platform === 'darwin') {
-        // netstat reads the connection table from the kernel and never touches a file system; lsof is the fallback
-        // for a netstat whose output carries no owner.
+        // netstat and nettop read sockets from the kernel without lsof's walk over mounted file systems; lsof is the
+        // fallback when neither names an owner.
         const [connections, table] = await Promise.all([
           run('/usr/sbin/netstat', ['-anv', '-p', 'tcp'], timeoutMs).catch(() => ''),
           run('ps', ['-axo', 'pid=,ppid='], timeoutMs),
         ]);
         let peers = parseDarwinNetstat(connections, client, remotePort!, localPort!);
+        // macOS 27 hands netstat an empty table when an ad-hoc signed process, such as PugPort's own build, is among
+        // its live ancestors; nettop still lists every socket.
+        if (!peers.length)
+          peers = parseNettop(
+            await run(
+              '/usr/bin/nettop',
+              ['-L', '1', '-n', '-m', 'tcp', '-t', 'loopback', '-J', 'state'],
+              timeoutMs,
+            ).catch(() => ''),
+            client,
+            remotePort!,
+            localPort!,
+          );
         if (!peers.length)
           peers = parseLsof(await lsofOnce(run, Math.min(timeoutMs, LSOF_TIMEOUT_MS)), client, remotePort!, localPort!);
         return found(peers).map((pid) => walkTable(table, pid));

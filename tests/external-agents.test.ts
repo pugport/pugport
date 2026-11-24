@@ -1197,6 +1197,99 @@ test('Grok usage defaults to independent login; source persists, never silently 
   assert.doesNotMatch(readFileSync(f.agents.config.file, 'utf8'), /SYNTHETIC_TOKEN/);
 });
 
+test('Grok usage account: matches only the confirmed account, differs for another, stays unverified without an identity, and a source change drops the confirmation', async (t) => {
+  // Two synthetic Cursor logins; their ids and tokens must never leave the server.
+  const accounts = {
+    a: { userId: 'user_SYNTHETIC_A', token: 'SYNTHETIC_TOKEN_A' },
+    b: { userId: 'user_SYNTHETIC_B', token: 'SYNTHETIC_TOKEN_B' },
+  };
+  let signedIn: keyof typeof accounts | undefined = 'a';
+  const grokUsage = {
+    session: async () => (signedIn ? accounts[signedIn] : undefined),
+    fetch: async () => Response.json({ usagePercent: 20, grokPlanLabel: 'SuperGrok' }),
+  };
+  const fake = fakeBridge((request) =>
+    request.action === 'usage'
+      ? {
+          ok: true,
+          quota: {
+            status: 'known',
+            source: '独立登录 · Grok Bot 用量',
+            observedAt: '2026-10-11T08:00:00Z',
+            windows: [{ id: 'grok-bot', label: 'SuperGrok', usedPercent: 9, resetsAt: null }],
+          },
+        }
+      : { ok: true },
+  );
+  const f = fixture(t, { bridge: fake.bridge, grokUsage });
+  const account = () => f.agents.view('grok-bot').usageAccount;
+  const app = express();
+  app.use(express.json());
+  externalAgentRoutes(app, f.agents);
+  const server = await listenForFetch(app);
+  t.after(() => server.close());
+  const confirm = async (fingerprint: string) =>
+    (
+      await fetch(`http://127.0.0.1:${(server.address() as { port: number }).port}/api/external-agents/grok-bot`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ usageAccountConfirmed: fingerprint }),
+      })
+    ).status;
+
+  assert.equal(account(), undefined, 'no reading yet, nothing to verify');
+  await f.agents.login('grok-bot');
+  assert.deepEqual(account(), { status: 'unverified' }, 'the separate login reports no comparable identity');
+  assert.throws(() => f.agents.update('grok-bot', { usageAccountConfirmed: '0'.repeat(64) }), /用量账号已变化/);
+
+  f.agents.update('grok-bot', { usageSource: 'cursor-editor' });
+  await f.agents.readUsage('grok-bot');
+  const a = account()!;
+  assert.equal(a.status, 'unverified');
+  assert.match(a.fingerprint ?? '', /^[a-f0-9]{64}$/);
+  assert.equal(await confirm(a.fingerprint!), 200);
+  assert.deepEqual(account(), { status: 'matches', fingerprint: a.fingerprint });
+  await f.restart({ bridge: fake.bridge, grokUsage });
+  await f.agents.readUsage('grok-bot');
+  assert.equal(account()?.status, 'matches', 'the confirmation survives a restart');
+
+  signedIn = 'b';
+  await f.agents.readUsage('grok-bot');
+  const b = account()!;
+  assert.equal(b.status, 'different');
+  assert.notEqual(b.fingerprint, a.fingerprint);
+  assert.throws(() => f.agents.update('grok-bot', { usageAccountConfirmed: a.fingerprint }), /用量账号已变化/);
+  assert.throws(
+    () => f.agents.update('grok-bot', { usageSource: 'separate', usageAccountConfirmed: b.fingerprint }),
+    /用量账号已变化/,
+  );
+  assert.equal(f.agents.view('grok-bot').usageSource, 'cursor-editor', 'a refused patch changes nothing');
+  signedIn = undefined;
+  await f.agents.readUsage('grok-bot');
+  assert.equal(account(), undefined, 'a failed read is not attributed to any account');
+  signedIn = 'a';
+  await f.agents.readUsage('grok-bot');
+  assert.equal(account()?.status, 'matches');
+
+  f.agents.update('grok-bot', { usageSource: 'separate' });
+  await f.agents.readUsage('grok-bot');
+  assert.deepEqual(account(), { status: 'unverified' }, 'the editor account is not carried over to this reading');
+  f.agents.update('grok-bot', { usageSource: 'cursor-editor' });
+  await f.agents.readUsage('grok-bot');
+  assert.deepEqual(
+    account(),
+    { status: 'unverified', fingerprint: a.fingerprint },
+    'switching back does not revive it',
+  );
+
+  f.agents.update('grok-bot', { usageAccountConfirmed: a.fingerprint });
+  await f.agents.login('grok-bot');
+  assert.equal(f.agents.config.agent('grok-bot').usageAccountConfirmed, undefined, 'login switches the source too');
+
+  const exposed = JSON.stringify(f.agents.list()) + readFileSync(f.agents.config.file, 'utf8');
+  assert.doesNotMatch(exposed, /SYNTHETIC_(?:A|B|TOKEN)/);
+});
+
 test('login enables Grok usage and immediately reads; later navigation results bypass the ten-minute failure cooldown', async (t) => {
   let successful = false;
   const signatures = [
