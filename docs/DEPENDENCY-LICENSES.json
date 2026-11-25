@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "project": "pugport",
-  "projectVersion": "0.0.39",
+  "projectVersion": "0.0.40",
   "scope": "package-lock.json metadata and installed package-root license files; excludes full bundled-binary dependency analysis",
   "source": "package-lock.json",
   "packagePathCount": 676,
