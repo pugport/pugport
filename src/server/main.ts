@@ -13,7 +13,7 @@ import { gateLoosening, normalizeGates, projectGatesInputSchema } from '../share
 import { sendStateResponse, timeStateRequest } from './state-response.ts';
 import { replaceSyncedSettings } from '../shared/account-sync.ts';
 import { publishForwardToken, publishSessionToken, sessionTokenFile } from './platform/desktop-endpoint.ts';
-import { executorCaller, perConnection } from './caller-identity.ts';
+import { callerGuards, executorCaller } from './caller-identity.ts';
 import { activeProviders, isNativeCli, nativeCliProviders, providerIds } from '../shared/provider-registry.ts';
 import { nodeRuntimes } from './node/node-runtimes.ts';
 import { GitHubConnection } from './github.ts';
@@ -461,7 +461,7 @@ scheduledTaskRoutes(app, scheduledTasks);
 inboxRoutes(app, controller.inbox);
 problemReportRoutes(app, problemReports);
 rollbackCliRoute(app, controller);
-const socketIsExecutor = perConnection((socket: import('node:net').Socket) =>
+const { callerKind, ownerLevelCaller, refuseExecutors } = callerGuards((socket) =>
   executorCaller({
     remotePort: socket.remotePort,
     localPort: socket.localPort,
@@ -469,18 +469,7 @@ const socketIsExecutor = perConnection((socket: import('node:net').Socket) =>
     owns: isOwnedProcess,
   }),
 );
-function callerIsExecutor(req: express.Request): Promise<boolean> {
-  if (req.headers['x-pugport-executor'] === '1') return Promise.resolve(true);
-  return socketIsExecutor(req.socket);
-}
-// File-token writes that act as the owner: PugPort's own executors are refused.
-const refuseExecutors: express.RequestHandler = async (req, res, next) => {
-  if (req.method !== 'GET' && req.method !== 'HEAD' && !res.locals.owner && (await callerIsExecutor(req))) {
-    res.status(403).json({ error: "PugPort's own executors cannot act as the owner." });
-    return;
-  }
-  next();
-};
+// File-token writes that act as the owner: executors and callers that cannot be identified are refused.
 app.use('/api/conversations/:id/work', refuseExecutors);
 app.delete('/api/conversations/:id', refuseExecutors);
 app.delete('/api/projects/:id', refuseExecutors);
@@ -521,7 +510,7 @@ externalTaskRoutes(app, externalTasks, {
   send: (id, body) => typedMessage(id, body, false, (body as MessageInput).permissionOrigin),
   ownsProcess: isOwnedProcess,
   deviceToken: () => forwardToken,
-  fromExecutor: callerIsExecutor,
+  fromExecutor: callerKind,
 });
 // One click adds that MCP server to Claude Code, Codex, Cursor or Grok CLI on this computer.
 mcpConnectRoutes(app, new McpConnections({ command: () => mcpCommand(root, port), cards: () => controller.targets }));
@@ -752,7 +741,7 @@ remoteServerRoutes(
     accountRoute: (alias) => devices?.serverReach(alias).account ?? false,
     nodeReading: (alias, services) => devices!.serverReading(alias, services),
   }),
-  callerIsExecutor,
+  callerKind,
 );
 const serverEnrollments = new ServerEnrollments(
   join(dataDir, 'remote-servers.json'),
@@ -763,7 +752,7 @@ const serverEnrollments = new ServerEnrollments(
   instaboxSsh,
   { sshAvailable: (alias) => localDeviceAccess.sshAvailable(alias), refresh: () => account.refreshServerEnrollments() },
 );
-serverEnrollmentRoutes(app, serverEnrollments, callerIsExecutor);
+serverEnrollmentRoutes(app, serverEnrollments, callerKind);
 if (devices) serverEnrollments.startAutomatic();
 const nodeTaskRunner = role === 'node' ? externalTaskRunner(externalTasks, workspace.store, desktopApp()) : undefined;
 const deviceNode =
@@ -1986,10 +1975,7 @@ async function routeTypedMessage(
   });
 }
 app.post('/api/conversations/:id/messages', async (req, res) => {
-  if (!res.locals.owner && (await callerIsExecutor(req))) {
-    res.status(403).json({ error: "PugPort's own executors cannot send messages as the owner." });
-    return;
-  }
+  if (!(await ownerLevelCaller(req, res, "PugPort's own executors cannot send messages as the owner."))) return;
   res.status(201).json(await typedMessage(req.params.id, req.body, true));
 });
 app.post('/api/conversations/:id/fork', (req, res) => {

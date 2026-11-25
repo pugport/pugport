@@ -5,6 +5,7 @@ import { verificationLimitedChecks } from '../shared/verification-limited.ts';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { refuseUnknownCaller, type CallerKind } from './caller-identity.ts';
 import { mentionItems } from '../cli/mentions.ts';
 import { messageRouting } from '../cli/routing.ts';
 import { externalAgentCatalog, isExternalAgentId, isThirdPartyExchange } from '../shared/external-agents.ts';
@@ -180,8 +181,8 @@ export const dispatchSchema = z
     source: z.literal('device').optional(),
   })
   .strict();
-/** In-process only: whether the HTTP caller descends from this backend or one of its executors. */
-type FromExecutor = { fromExecutor?: () => Promise<boolean> };
+/** In-process only: whether the HTTP caller descends from this backend or one of its executors, when that is known. */
+type FromExecutor = { fromExecutor?: () => Promise<CallerKind> };
 const slackOwner = Symbol('host-verified-slack-owner');
 type DispatchInput = z.infer<typeof dispatchSchema> & {
   [slackOwner]?: true;
@@ -197,6 +198,14 @@ type DispatchInput = z.infer<typeof dispatchSchema> & {
 } & FromExecutor;
 /** A writable task asked for by one of PugPort's own executors; the route answers 403. */
 export class ExecutorRefused extends Error {}
+/** A writable task whose caller could not be identified; the route answers 503 and the caller may try again. */
+export class CallerUnknown extends Error {}
+/** Asked only once write is known, so read-only tasks never run the process lookup. */
+async function writeCaller(input: FromExecutor) {
+  const caller = await input.fromExecutor?.();
+  if (caller === 'executor') throw new ExecutorRefused();
+  if (caller === 'unknown') throw new CallerUnknown();
+}
 
 /**
  * Tasks handed in by AI agents outside PugPort (Claude Code, Codex …) through the pugport MCP server. Each task
@@ -351,7 +360,7 @@ export class ExternalTasks {
       !untrusted &&
       callerWrite(ceiling, input.write) &&
       (input.write === true || (!device && !!input.projectPath));
-    if (write && (await input.fromExecutor?.())) throw new ExecutorRefused();
+    if (write) await writeCaller(input);
     // Refused rather than quietly run read-only: the caller would otherwise believe files were changed.
     if (write && !device && !input.projectPath)
       throw new Error('write: true needs projectPath (the folder to change).');
@@ -902,7 +911,7 @@ export class ExternalTasks {
       !chat &&
       !this.untrusted(conversation) &&
       callerWrite(ceiling, input.write ?? (owner?.deviceId ? owner.write : undefined));
-    if (write && (await input.fromExecutor?.())) throw new ExecutorRefused();
+    if (write) await writeCaller(input);
     // A device mention's narrower ceiling applies to that message only, not to the conversation's later local work.
     if (!owner?.ceiling && !mentionedDevice)
       this.workspace.store.save(ownerKind, conversationId, conversationId, { ...owner, context, ceiling });
@@ -1059,7 +1068,7 @@ export function externalTaskRoutes(
     /** Whether a process id is one of PugPort's own executors. */
     ownsProcess?: (pid: number) => boolean;
     deviceToken?: () => string | undefined;
-    fromExecutor?: (req: Request) => Promise<boolean>;
+    fromExecutor?: (req: Request) => Promise<CallerKind>;
   },
 ) {
   const executorError =
@@ -1071,10 +1080,11 @@ export function externalTaskRoutes(
           fromExecutor: () =>
             Promise.resolve()
               .then(() => options.fromExecutor!(req))
-              .catch(() => false),
+              .catch((): CallerKind => 'unknown'),
         }
       : {};
   const refuse = (res: Response, error: unknown) => {
+    if (error instanceof CallerUnknown) return refuseUnknownCaller(res);
     if (!(error instanceof ExecutorRefused)) throw error;
     res.status(403).json({ error: executorError });
   };

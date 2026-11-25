@@ -25,6 +25,7 @@ import { searchConversations } from '../src/server/search-routes.ts';
 import { selectQueue } from '../src/ui/queue-utils.ts';
 import { sidebarActivity, sidebarScope } from '../src/ui/sidebar-activity.ts';
 import {
+  CallerUnknown,
   ExecutorRefused,
   ExternalTasks,
   externalTaskRoutes,
@@ -1894,12 +1895,17 @@ test('HTTP routes validate input, answer 404 for unknown tasks and say how to st
   const f = fixture(t);
   const app = express();
   app.use(express.json());
-  let executor = false;
+  let caller: 'executor' | 'other' | 'unknown' | 'throws' = 'other';
+  let lookups = 0;
   externalTaskRoutes(app, f.tasks, {
     root: f.directory,
     port: 4317,
     deviceToken: () => 'synthetic-forward',
-    fromExecutor: async () => executor,
+    fromExecutor: async () => {
+      lookups++;
+      if (caller === 'throws') throw new Error('synthetic lookup failure');
+      return caller;
+    },
   });
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status(400).json({ error: error instanceof z.ZodError ? 'invalid' : (error as Error).message });
@@ -1919,7 +1925,7 @@ test('HTTP routes validate input, answer 404 for unknown tasks and say how to st
   assert.equal((await post({ task: 'hi', priority: 'high' })).status, 400);
   // Continuing a conversation and forcing read-only stay in-process (the Slack gateway); the route keeps its schema.
   assert.equal((await post({ task: 'hi', conversationId: 'c' })).status, 400);
-  executor = true;
+  caller = 'executor';
   const fromExecutor = await post({
     task: 'Change',
     projectPath: f.directory,
@@ -1928,13 +1934,33 @@ test('HTTP routes validate input, answer 404 for unknown tasks and say how to st
   });
   assert.equal(fromExecutor.status, 403);
   assert.match((await fromExecutor.json()).error, /own executors/);
-  executor = false;
   const countBefore = f.workspace.store.conversations().length;
+  // A writable task from a caller that cannot be identified is refused for now, whether the lookup answers or fails.
+  for (const failed of ['unknown', 'throws'] as const) {
+    caller = failed;
+    const before = lookups;
+    for (const body of [
+      { task: 'Change', projectPath: f.directory, write: true, callerContext: terminalContext(f.directory) },
+      { task: 'Change', write: true, source: 'device' },
+    ]) {
+      const refused = await post(body, 'synthetic-forward');
+      assert.equal(refused.status, 503, failed);
+      assert.equal(refused.headers.get('retry-after'), '2');
+      assert.match((await refused.json()).error, /could not identify/);
+    }
+    assert.equal(lookups - before, 2);
+    const readOnly = await post({ task: 'Explain', projectPath: f.directory, write: false });
+    assert.equal(readOnly.status, 201, 'a read-only task needs no lookup');
+    assert.equal(lookups - before, 2);
+  }
+  const countAfterReads = f.workspace.store.conversations().length;
+  assert.equal(countAfterReads, countBefore + 2, 'the refused writes created nothing');
+  caller = 'other';
   const rejectedDevice = await post({ task: 'Change', write: true, source: 'device' });
   assert.equal(rejectedDevice.status, 403);
   assert.match((await rejectedDevice.json()).error, /device node/);
   assert.equal((await post({ task: 'Change', write: true, source: 'device' }, 'wrong')).status, 403);
-  assert.equal(f.workspace.store.conversations().length, countBefore);
+  assert.equal(f.workspace.store.conversations().length, countAfterReads);
   const terminal = await post(askRequest({ task: 'Edit', projectPath: f.directory, write: true }));
   assert.equal(terminal.status, 201);
   const terminalBody = await terminal.json();
@@ -2661,7 +2687,7 @@ test('the executor lookup runs once write is known, including inherited and over
   let calls = 0;
   const fromExecutor = async () => {
     calls++;
-    return true;
+    return 'executor' as const;
   };
   const read = await f.tasks.dispatch({ task: 'Explain', projectPath: f.directory, write: false, fromExecutor });
   assert.equal(read.permissionOrigin?.mode, 'read-only');
@@ -2701,6 +2727,27 @@ test('the executor lookup runs once write is known, including inherited and over
     ExecutorRefused,
   );
   assert.equal(calls, 2);
+  // A caller that could not be identified is neither let through nor called an executor.
+  const unknown = async () => 'unknown' as const;
+  const before = f.workspace.store.messages(owned.conversationId).length;
+  await assert.rejects(
+    f.tasks.follow(
+      owned.conversationId,
+      { message: 'Again', fromExecutor: unknown, callerContext: callerContext(f.directory, 'write-anywhere') },
+      send,
+    ),
+    CallerUnknown,
+  );
+  await assert.rejects(
+    f.tasks.dispatch({
+      task: 'Implement X',
+      projectPath: f.directory,
+      callerContext: { ...callerContext(f.directory, 'read-only'), client: 'claude' },
+      fromExecutor: unknown,
+    }),
+    CallerUnknown,
+  );
+  assert.equal(f.workspace.store.messages(owned.conversationId).length, before);
 });
 
 test('external result HTTP preserves full text and only saves long trusted replies', async (t) => {

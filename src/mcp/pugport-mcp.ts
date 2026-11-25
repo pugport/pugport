@@ -13,6 +13,7 @@ import { readSessionToken } from '../server/platform/desktop-endpoint.ts';
  */
 import { createInterface } from 'node:readline';
 import { APP_VERSION } from '../shared/identity.ts';
+import { callerUnknownRetryMs } from '../shared/caller-unknown.ts';
 import { permissionLine as originLine, type PermissionOrigin } from '../shared/permission-reason.ts';
 import { probeCaller } from './caller-probe.ts';
 import { createCallerContext } from './caller-context.ts';
@@ -271,7 +272,7 @@ async function request(path: string, options: { method?: 'GET' | 'POST'; body?: 
   const port = backendPort();
   const base = `http://127.0.0.1:${port}`;
   const signal = AbortSignal.any([AbortSignal.timeout(options.timeoutMs ?? 30_000), closing.signal]);
-  const call = async (target: string, init: RequestInit) => {
+  const call = async (target: string, init: RequestInit, resent = false): Promise<Json> => {
     let response: Response;
     try {
       response = await fetch(`${base}${target}`, { ...init, signal });
@@ -280,6 +281,15 @@ async function request(path: string, options: { method?: 'GET' | 'POST'; body?: 
       throw new ToolError(notRunning);
     }
     const data = (await response.json().catch(() => undefined)) as Json | undefined;
+    // PugPort could not identify this program and refused before any handler ran: the same request goes once more.
+    const wait = resent ? undefined : callerUnknownRetryMs(response.status, data, response.headers.get('retry-after'));
+    if (wait !== undefined) {
+      await new Promise<void>((done) => {
+        const timer = setTimeout(done, wait);
+        signal.addEventListener('abort', () => (clearTimeout(timer), done()), { once: true });
+      });
+      return call(target, init, true);
+    }
     if (!response.ok)
       throw new ToolError(
         typeof data?.error === 'string' ? data.error : `PugPort answered HTTP ${response.status}.`,

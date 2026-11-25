@@ -291,47 +291,74 @@ test(
       'synthetic secret',
     ]);
 
+    // The synthetic probe fails, so a file-token caller is not identified here: its owner-level writes are refused
+    // for now with a retry hint, an executor keeps its 403, and the desktop window's owner value needs no lookup.
+    const refusedForNow = async (path: string, method: string) => {
+      const response = await apiWrite(path, {}, {}, method);
+      assert.equal(response.status, 503, path);
+      assert.equal(response.headers.get('retry-after'), '2', path);
+      assert.match(((await response.json()) as any).error, /could not identify/, path);
+    };
+    const incognito = (await (await apiWrite('/api/conversations', { incognito: true })).json()) as any;
+    const ownerLevelWrites = [
+      ['POST', '/api/conversations/00000000-0000-4000-8000-000000000001/messages'],
+      ['POST', '/api/conversations/00000000-0000-4000-8000-000000000001/work/lanes'],
+      // Soft deletes stay open to local clients for cleanup, never to PugPort's own executors.
+      ['DELETE', '/api/conversations/00000000-0000-4000-8000-000000000001'],
+      ['DELETE', '/api/projects/00000000-0000-4000-8000-000000000001'],
+      ['DELETE', `/api/conversations/${incognito.id}`],
+      // Pairing codes, unpairing and cancelling stay open to the owner's terminal, never to executors.
+      ['POST', '/api/node/pairing'],
+      ['DELETE', '/api/node/peers'],
+      ['DELETE', '/api/node/peers/00000000-0000-4000-8000-000000000001'],
+      ['POST', '/api/workflows/00000000-0000-4000-8000-000000000001/cancel'],
+    ] as const;
+    for (const [method, path] of ownerLevelWrites) {
+      assert.equal((await apiWrite(path, {}, { 'x-pugport-executor': '1' }, method)).status, 403, path);
+      await refusedForNow(path, method);
+    }
     for (const path of [
       '/api/conversations/00000000-0000-4000-8000-000000000001/messages',
       '/api/conversations/00000000-0000-4000-8000-000000000001/work/lanes',
     ]) {
-      assert.equal((await apiWrite(path, {}, { 'x-pugport-executor': '1' })).status, 403);
-      assert.notEqual(
-        (await apiWrite(path, {}, { 'x-pugport-executor': '1', 'x-pugport-owner': earlyOwner! })).status,
-        403,
-      );
+      const asOwner = await apiWrite(path, {}, { 'x-pugport-executor': '1', 'x-pugport-owner': earlyOwner! });
+      assert.equal([403, 503].includes(asOwner.status), false, path);
     }
-    // Soft deletes stay open to local clients for cleanup, never to PugPort's own executors.
-    for (const path of [
-      '/api/conversations/00000000-0000-4000-8000-000000000001',
-      '/api/projects/00000000-0000-4000-8000-000000000001',
-    ]) {
-      assert.equal((await apiWrite(path, {}, { 'x-pugport-executor': '1' }, 'DELETE')).status, 403, path);
-      assert.notEqual((await apiWrite(path, {}, {}, 'DELETE')).status, 403, path);
+    if (process.platform !== 'win32') {
+      // With the system tools back, this test process is identified as another local program: its writes reach
+      // their handlers again, on new connections and on ones whose earlier lookups failed.
+      const probeMode = async (real: boolean) => {
+        const switched = new Promise<void>((done) => {
+          const listener = (message: any) => {
+            if (message.type !== 'caller-probe-mode') return;
+            child.off('message', listener);
+            done();
+          };
+          child.on('message', listener);
+        });
+        child.send({ type: 'caller-probe-mode', real });
+        await switched;
+      };
+      await probeMode(true);
+      for (const [method, path] of ownerLevelWrites) {
+        const response = await apiWrite(path, {}, {}, method);
+        assert.equal(response.status === 503 || response.headers.has('retry-after'), false, path);
+        if (path !== `/api/conversations/${incognito.id}`) assert.notEqual(response.status, 403, path);
+        // Deleting an incognito chat closes it for good, so it needs the owner.
+        else assert.equal(response.status, 403);
+      }
+      await probeMode(false);
     }
-    // Deleting an incognito chat closes it for good, so it needs the owner.
-    const incognito = (await (await apiWrite('/api/conversations', { incognito: true })).json()) as any;
     assert.equal(
       (await apiWrite(`/api/projects/${incognito.projectId}/gates`, tight, { 'x-pugport-owner': earlyOwner! }, 'PATCH'))
         .status,
       400,
     );
-    assert.equal((await apiWrite(`/api/conversations/${incognito.id}`, {}, {}, 'DELETE')).status, 403);
     assert.equal(
       (await apiWrite(`/api/conversations/${incognito.id}`, {}, { 'x-pugport-owner': earlyOwner! }, 'DELETE')).status,
       200,
     );
-    // Pairing codes, unpairing and cancelling stay open to the owner's terminal, never to executors.
-    for (const [method, path] of [
-      ['POST', '/api/node/pairing'],
-      ['DELETE', '/api/node/peers'],
-      ['DELETE', '/api/node/peers/00000000-0000-4000-8000-000000000001'],
-      ['POST', '/api/workflows/00000000-0000-4000-8000-000000000001/cancel'],
-    ] as const) {
-      assert.equal((await apiWrite(path, {}, { 'x-pugport-executor': '1' }, method)).status, 403, path);
-      assert.notEqual((await apiWrite(path, {}, {}, method)).status, 403, path);
-    }
-    if (process.platform === 'win32') {
+    {
       const agent = new Agent({ keepAlive: true, maxSockets: 1 });
       const write = () =>
         new Promise<number>((done, fail) => {
@@ -351,12 +378,12 @@ test(
           req.end('{}');
         });
       const before = probeCount;
-      await write();
-      await write();
+      const statuses = [await write(), await write()];
       agent.destroy();
       await new Promise((done) => setTimeout(done, 50));
       // The synthetic probe always fails; a failure is not remembered for the connection.
       assert.equal(probeCount - before, 2, 'a failed probe is asked again on the same socket');
+      assert.deepEqual(statuses, [503, 503]);
     }
     // A device node on this computer looks for role: 'desktop' before handing tasks over.
     assert.equal(((await fetch(base + '/api/health').then((response) => response.json())) as any).role, 'node');

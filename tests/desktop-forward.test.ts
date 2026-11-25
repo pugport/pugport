@@ -18,7 +18,10 @@ type Seen = { method: string; path: string; token?: string; forwardToken?: strin
 /** A stand-in for the desktop app's local API; `routes` answers by "METHOD /path". */
 async function fakeDesktop(
   t: TestContext,
-  routes: Record<string, (seen: Seen) => { status?: number; body: unknown } | 'hang up'>,
+  routes: Record<
+    string,
+    (seen: Seen) => { status?: number; body: unknown; headers?: Record<string, string> } | 'hang up'
+  >,
   /** The port of a desktop app that was open before (it opens again). */
   port?: number,
 ) {
@@ -43,6 +46,7 @@ async function fakeDesktop(
     if (reply === 'hang up') return void req.socket.destroy();
     res.statusCode = reply.status ?? 200;
     res.setHeader('content-type', 'application/json');
+    for (const [name, value] of Object.entries(reply.headers ?? {})) res.setHeader(name, value);
     res.end(JSON.stringify(reply.body));
   });
   if (port) await new Promise<void>((done) => server.listen(port, '127.0.0.1', done));
@@ -158,6 +162,43 @@ test('a desktop that is gone takes nothing; one that hangs up may have it; its e
     ),
     DesktopUncertain,
   );
+});
+
+test('a forward refused because the desktop could not identify the node is sent once more, and only then', async (t) => {
+  const input = { task: 'Edit', caller: 'Desk', projectPath: '/synthetic', write: true, untrusted: false };
+  const unidentified = {
+    status: 503,
+    headers: { 'retry-after': '0' },
+    body: { error: 'PugPort could not identify the program making this request.', code: 'caller-unknown' },
+  };
+  const forward = async (answers: { status?: number; body: unknown; headers?: Record<string, string> }[]) => {
+    const desktop = await fakeDesktop(t, { 'POST /api/external/tasks': () => answers.shift()! });
+    const result = await desktopApp({ port: desktop.port, forwardTokenFile: desktop.tokenFile })
+      .dispatch(input, 'device')
+      .catch((error: Error) => error);
+    return { result, seen: desktop.seen };
+  };
+  const accepted = { status: 201, body: { taskId: 'desk-1', status: 'queued' } };
+  const recovered = await forward([unidentified, accepted]);
+  assert.deepEqual(recovered.result, { taskId: 'desk-1', status: 'queued' });
+  assert.equal(recovered.seen.length, 2);
+  assert.deepEqual(recovered.seen[1], recovered.seen[0], 'the same request, token and body');
+  assert.equal(recovered.seen[1]!.body?.source, 'device');
+
+  const stillRefused = await forward([unidentified, unidentified, accepted]);
+  assert.match((stillRefused.result as Error).message, /could not identify/);
+  assert.equal(stillRefused.seen.length, 2, 'one resend, never more');
+
+  // Any other 503, with or without Retry-After, is not that refusal.
+  for (const other of [
+    { status: 503, headers: { 'retry-after': '0' }, body: { error: 'synthetic outage' } },
+    { status: 503, body: { error: 'synthetic outage', code: 'something-else' } },
+    { status: 500, headers: { 'retry-after': '0' }, body: { error: 'synthetic outage', code: 'caller-unknown' } },
+  ]) {
+    const failed = await forward([other, accepted]);
+    assert.match((failed.result as Error).message, /synthetic outage/);
+    assert.equal(failed.seen.length, 1);
+  }
 });
 
 test('status keeps only the peer fields; a missing task and a closed desktop are told apart', async (t) => {

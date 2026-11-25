@@ -321,6 +321,51 @@ function mcp(
   };
 }
 
+test('MCP resends once a request refused because its caller could not be identified, and no other 503', async (t) => {
+  const unidentified = {
+    status: 503,
+    headers: { 'retry-after': '0' },
+    body: { error: 'PugPort could not identify the program making this request.', code: 'caller-unknown' },
+  };
+  const cancelled = { status: 200, body: { taskId: 'task-1', status: 'cancelled' } };
+  const run = async (answers: { status: number; headers?: Record<string, string>; body: unknown }[]) => {
+    const seen: { method: string; url: string; token: unknown; body: string }[] = [];
+    const server = createServer(async (req: IncomingMessage, res) => {
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      seen.push({ method: req.method!, url: req.url!, token: req.headers['x-agent-token'], body });
+      const answer = answers.shift()!;
+      res.writeHead(answer.status, { 'content-type': 'application/json', ...answer.headers });
+      res.end(JSON.stringify(answer.body));
+    });
+    await listenForFetch(server);
+    t.after(() => server.close());
+    const client = mcp(t, (server.address() as AddressInfo).port);
+    const reply = await client.call('cancel_task', { task_id: 'task-1' });
+    client.child.stdin.end();
+    await client.exited;
+    return { reply, seen };
+  };
+  const recovered = await run([unidentified, cancelled]);
+  assert.equal(recovered.reply.isError, false, recovered.reply.text);
+  assert.equal(recovered.seen.length, 2);
+  assert.deepEqual(recovered.seen[1], recovered.seen[0], 'the same request, token and body');
+  assert.equal(recovered.seen[0]!.method, 'POST');
+
+  const stillRefused = await run([unidentified, unidentified, cancelled]);
+  assert.equal(stillRefused.reply.isError, true);
+  assert.match(stillRefused.reply.text, /could not identify/);
+  assert.equal(stillRefused.seen.length, 2, 'one resend, never more');
+
+  const outage = await run([
+    { status: 503, headers: { 'retry-after': '0' }, body: { error: 'synthetic outage' } },
+    cancelled,
+  ]);
+  assert.equal(outage.reply.isError, true);
+  assert.match(outage.reply.text, /synthetic outage/);
+  assert.equal(outage.seen.length, 1, 'a 503 without the code is never resent');
+});
+
 test('MCP sends the executor marker only when set', async (t) => {
   for (const marker of [undefined, '1']) {
     const client = mcp(t, 1, { '/api/external/tasks': { total: 0, tasks: [] } }, { PUGPORT_EXECUTOR: marker });

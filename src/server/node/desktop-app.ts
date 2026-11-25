@@ -3,6 +3,7 @@ import type { PeerExecutor } from './peer-protocol.ts';
 import { APP_NAME } from '../../shared/identity.ts';
 import { peerTaskStatusSchema, type PeerTaskStatus } from './peer-protocol.ts';
 import { readDesktopPort, readForwardToken, readSessionToken } from '../platform/desktop-endpoint.ts';
+import { callerUnknownRetryMs } from '../../shared/caller-unknown.ts';
 
 /*
  * The PugPort desktop app on the node's own computer, reached through its local API on 127.0.0.1 (the same calls the
@@ -72,7 +73,8 @@ export function desktopApp(
       signal?: AbortSignal;
       base: string;
     },
-  ) => {
+    resent = false,
+  ): Promise<{ status: number; body: Record<string, unknown> }> => {
     const timeout = AbortSignal.timeout(init.timeoutMs);
     let response: Response;
     try {
@@ -91,6 +93,16 @@ export function desktopApp(
       throw error;
     }
     const body = (await response.json().catch(() => undefined)) as Record<string, unknown> | undefined;
+    // The desktop could not identify this node and refused before any handler ran, so no task exists there yet:
+    // the same request goes once more.
+    const wait = resent ? undefined : callerUnknownRetryMs(response.status, body, response.headers.get('retry-after'));
+    if (wait !== undefined) {
+      await new Promise<void>((done) => {
+        const timer = setTimeout(done, wait);
+        init.signal?.addEventListener('abort', () => (clearTimeout(timer), done()), { once: true });
+      });
+      return call(path, init, true);
+    }
     return { status: response.status, body: body && typeof body === 'object' ? body : {} };
   };
   const failure = (reply: { status: number; body: Record<string, unknown> }) =>

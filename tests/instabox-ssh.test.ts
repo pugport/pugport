@@ -152,7 +152,7 @@ test('SSH prepare and removal routes deny non-owners and executors before mutati
     f.ssh.monitor,
     f.ssh,
   );
-  remoteServerRoutes(app, monitor, async (req) => req.headers['x-executor'] === 'yes');
+  remoteServerRoutes(app, monitor, async (req) => (req.headers['x-executor'] === 'yes' ? 'executor' : 'other'));
   const server = createServer(app).listen(0, '127.0.0.1');
   await once(server, 'listening');
   const address = server.address() as { port: number };

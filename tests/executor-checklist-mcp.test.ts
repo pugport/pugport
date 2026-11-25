@@ -1,3 +1,4 @@
+import { callerUnknownRetryMs } from '../src/shared/caller-unknown.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -39,6 +40,7 @@ function loadServer(probe: () => Promise<unknown> = async () => ({ chain: [], en
       if (name.endsWith('/caller-context.ts')) return { createCallerContext };
       if (name.endsWith('/client-roots.ts')) return { createClientRoots };
       if (name.endsWith('/caller-probe.ts')) return { probeCaller: probe };
+      if (name.endsWith('/caller-unknown.ts')) return { callerUnknownRetryMs };
       throw new Error(`Unexpected import ${name}`);
     },
     process: {

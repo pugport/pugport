@@ -156,7 +156,7 @@ test('HTTP guard rejects missing session token and disconnect revokes, closes, a
       log('synthetic failure');
       return 1;
     }),
-    async () => false,
+    async () => 'other',
   );
   for (const path of ['/api/remote-servers/enrollments', '/api/remote-servers/disconnect']) {
     assert.equal((await request(app, 'POST', path, { name: 'box', purge: true })).status, 403);

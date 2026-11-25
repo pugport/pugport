@@ -244,7 +244,11 @@ test('HTTP actions require session, origin and owner and refuse executor even wi
       undefined,
       monitor,
     ),
-    async (req) => req.headers['x-pugport-executor'] === '1',
+    async (req) => {
+      if (req.headers['x-synthetic-lookup'] === 'throws') throw new Error('synthetic lookup failure');
+      if (req.headers['x-synthetic-lookup'] === 'unknown') return 'unknown';
+      return req.headers['x-pugport-executor'] === '1' ? 'executor' : 'other';
+    },
   );
   app.use((error: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status(error.status ?? 400).json({ error: 'Rejected' });
@@ -267,6 +271,18 @@ test('HTTP actions require session, origin and owner and refuse executor even wi
     for (const headers of deniedHeaders) {
       assert.equal((await post(headers)).status, 403);
       assert.equal((await post(headers, 'wake')).status, 403);
+    }
+    // The owner value from a caller that cannot be identified: refused for now with a retry hint, nothing runs.
+    for (const lookup of ['unknown', 'throws']) {
+      const refused = await post(
+        { 'x-agent-token': 'session', 'x-pugport-owner': 'owner', 'x-synthetic-lookup': lookup },
+        'wake',
+      );
+      assert.equal(refused.status, 503, lookup);
+      assert.equal(refused.headers.get('retry-after'), '2');
+      assert.match((await refused.json()).error, /could not identify/);
+      // Without the owner value the answer stays 403 and no lookup is needed.
+      assert.equal((await post({ 'x-agent-token': 'session', 'x-synthetic-lookup': lookup })).status, 403);
     }
     assert.equal(calls.length, 0);
     assert.equal((await post({ 'x-agent-token': 'session', 'x-pugport-owner': 'owner' }, 'wake')).status, 200);

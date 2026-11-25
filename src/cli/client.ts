@@ -1,5 +1,6 @@
 import { underTest, UnderTestError } from '../server/platform/under-test.ts';
 import { readDesktopPort, readSessionToken } from '../server/platform/desktop-endpoint.ts';
+import { callerUnknownRetryMs } from '../shared/caller-unknown.ts';
 /** Talks to the PugPort backend running on this machine (the desktop app's local server). */
 
 export const notRunningMessage = 'PugPort 没有在运行。请先打开 PugPort 桌面应用，再试一次。';
@@ -100,6 +101,7 @@ export class PugPortClient {
     options: RequestOptions,
     retried = false,
     base = this.refreshBase(),
+    resent = false,
   ): Promise<T> {
     const signal = AbortSignal.any([
       AbortSignal.timeout(options.timeoutMs ?? 30_000),
@@ -123,6 +125,18 @@ export class PugPortClient {
     }
     const data = (await response.json().catch(() => undefined)) as Record<string, unknown> | undefined;
     if (!response.ok) {
+      // PugPort could not identify this program and refused before any handler ran: the same request goes once more.
+      const wait = resent
+        ? undefined
+        : callerUnknownRetryMs(response.status, data, response.headers.get('retry-after'));
+      if (wait !== undefined) {
+        await new Promise<void>((done) => {
+          const timer = setTimeout(done, wait);
+          options.signal?.addEventListener('abort', () => (clearTimeout(timer), done()), { once: true });
+        });
+        if (options.signal?.aborted) throw options.signal.reason;
+        return this.request<T>(method, path, body, options, retried, base, true);
+      }
       const reason = typeof data?.error === 'string' ? data.error : `PugPort 返回了错误（HTTP ${response.status}）。`;
       // A restarted backend rewrites its session file; read it again and try once more if the token changed.
       if (response.status === 403 && !retried && /session token/i.test(reason)) {

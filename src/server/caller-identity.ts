@@ -1,7 +1,12 @@
 import { execFile } from 'node:child_process';
+import type { Request, RequestHandler, Response } from 'express';
+import type { Socket } from 'node:net';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { callerUnknownCode, callerUnknownRetrySeconds } from '../shared/caller-unknown.ts';
+
+export { callerUnknownRetrySeconds };
 
 const exec = promisify(execFile);
 let warned = false;
@@ -146,8 +151,8 @@ const windowsTable =
 
 /**
  * Whether the program on the other end of this loopback connection descends from this backend or from one of its
- * executors. Only ever narrows access: any failure, missing tool or timeout answers undefined, so callers treat it as
- * not an executor without remembering that answer.
+ * executors. Any failure, missing tool or timeout answers undefined: the caller could not be identified, which is
+ * neither answer. Each consumer decides what that means and nobody remembers it.
  */
 export async function executorCaller(options: {
   remotePort?: number;
@@ -256,20 +261,66 @@ export async function executorCaller(options: {
   }
 }
 
-/** Asks once per connection and keeps a definite answer; a failed lookup answers false and is asked again next time. */
+/** Who is on the other end of a local request: one of PugPort's own executors, another program, or not known. */
+export type CallerKind = 'executor' | 'other' | 'unknown';
+export const callerUnknownError =
+  'PugPort could not identify the program making this request, so it was not carried out. Try again in a moment.';
+/** The answer for an owner-level write whose caller could not be identified: refused for now, safe to send again. */
+export function refuseUnknownCaller(res: Response) {
+  res.setHeader('Retry-After', String(callerUnknownRetrySeconds));
+  res.status(503).json({ error: callerUnknownError, code: callerUnknownCode });
+}
+
+/** Asks once per connection and keeps a definite answer; a failed lookup answers 'unknown' and is asked again. */
 export function perConnection<T extends object>(lookup: (connection: T) => Promise<boolean | undefined>) {
-  const answers = new WeakMap<T, Promise<boolean>>();
+  const answers = new WeakMap<T, Promise<CallerKind>>();
   return (connection: T) => {
     let answer = answers.get(connection);
     if (!answer) {
       answer = lookup(connection)
         .catch(() => undefined)
-        .then((found) => {
-          if (found === undefined) answers.delete(connection);
-          return found === true;
+        .then((found): CallerKind => {
+          if (typeof found !== 'boolean') {
+            answers.delete(connection);
+            return 'unknown';
+          }
+          return found ? 'executor' : 'other';
         });
       answers.set(connection, answer);
     }
     return answer;
   };
+}
+
+/**
+ * The checks the HTTP routes share, over one per-connection lookup. 'unknown' never means "not an executor": each
+ * consumer refuses, allows or retries it by its own rule.
+ */
+export function callerGuards(lookup: (socket: Socket) => Promise<boolean | undefined>) {
+  const socketCaller = perConnection(lookup);
+  /** PugPort's own clients say so themselves when an executor runs them; everyone else is looked up. */
+  const callerKind = (req: Request): Promise<CallerKind> =>
+    req.headers['x-pugport-executor'] === '1' ? Promise.resolve('executor') : socketCaller(req.socket);
+  /**
+   * File-token writes that act as the owner: PugPort's own executors are refused (403 with `refusal`), and so is a
+   * caller that could not be identified (503, try again). The desktop window's owner value needs no lookup.
+   * Answers whether the request may go on; when it may not, the response has been sent.
+   */
+  const ownerLevelCaller = async (req: Request, res: Response, refusal: string) => {
+    if (res.locals.owner) return true;
+    const caller = await callerKind(req);
+    if (caller === 'other') return true;
+    if (caller === 'executor') res.status(403).json({ error: refusal });
+    else refuseUnknownCaller(res);
+    return false;
+  };
+  const refuseExecutors: RequestHandler = async (req, res, next) => {
+    if (
+      req.method === 'GET' ||
+      req.method === 'HEAD' ||
+      (await ownerLevelCaller(req, res, "PugPort's own executors cannot act as the owner."))
+    )
+      next();
+  };
+  return { callerKind, ownerLevelCaller, refuseExecutors };
 }

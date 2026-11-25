@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
+import express from 'express';
 import { execFile, spawn } from 'node:child_process';
+import { Agent, createServer as createHttpServer, request } from 'node:http';
 import { connect, createServer, type AddressInfo, type Socket } from 'node:net';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
 import {
+  callerGuards,
+  callerUnknownError,
+  callerUnknownRetrySeconds,
   chainHasExecutor,
   executorCaller,
   parseLsof,
@@ -183,7 +188,7 @@ test('chain matches only the backend or an owned process', () => {
   );
 });
 
-test('caller lookup finds an executor ancestor and fails open, without a definite answer, on errors, odd addresses and timeouts', async () => {
+test('caller lookup finds an executor ancestor and gives no definite answer on errors, odd addresses and timeouts', async () => {
   const options = { remotePort: 5000, localPort: 4317, remoteAddress: '127.0.0.2', owns: () => false, timeoutMs: 20 };
   assert.equal(
     await executorCaller({
@@ -212,17 +217,136 @@ test('a connection keeps a definite answer and asks again after a failed lookup'
   let asked = 0;
   const check = perConnection(async (_connection: object) => answers[asked++]);
   const first = {};
-  assert.equal(await check(first), false, 'a failure lets the request through');
+  assert.equal(await check(first), 'unknown', 'a failure is its own answer, not "not an executor"');
   assert.deepEqual(
     await Promise.all([check(first), check(first)]),
-    [true, true],
+    ['executor', 'executor'],
     'concurrent requests share one lookup',
   );
-  assert.equal(await check(first), true);
+  assert.equal(await check(first), 'executor');
   const second = {};
-  assert.equal(await check(second), false);
-  assert.equal(await check(second), false);
+  assert.equal(await check(second), 'other');
+  assert.equal(await check(second), 'other');
   assert.equal(asked, 3);
+  const failing = perConnection(async (_connection: object) => {
+    asked++;
+    throw new Error('synthetic lookup failure');
+  });
+  assert.equal(await failing(first), 'unknown');
+  assert.equal(await failing(first), 'unknown');
+  assert.equal(asked, 5, 'a lookup that throws is asked again too');
+});
+
+test('owner-level writes pass identified callers, refuse executors and ask unidentified callers to retry', async (t) => {
+  // What the next lookup answers; 'hang' is a lookup that gives up the way executorCaller's own timeout does.
+  let next: boolean | undefined | 'throw' | 'hang' = false;
+  let lookups = 0;
+  const { callerKind, ownerLevelCaller, refuseExecutors } = callerGuards(async () => {
+    lookups++;
+    if (next === 'throw') throw new Error('synthetic lookup failure');
+    if (next === 'hang')
+      return executorCaller({
+        remotePort: 5000,
+        localPort: 4317,
+        remoteAddress: '127.0.0.1',
+        owns: () => true,
+        run: () => new Promise(() => {}),
+        timeoutMs: 20,
+      });
+    return next;
+  });
+  const app = express();
+  app.use((req, res, done) => {
+    res.locals.owner = req.headers['x-pugport-owner'] === 'synthetic-owner';
+    done();
+  });
+  // Mounted the way the backend mounts them: path guards first, then the handlers.
+  app.use('/api/conversations/:id/work', refuseExecutors);
+  app.delete('/api/conversations/:id', refuseExecutors);
+  app.all('/api/conversations/:id/work/lanes', (_req, res) => void res.json({ ok: true }));
+  app.delete('/api/conversations/:id', (_req, res) => void res.json({ ok: true }));
+  app.post('/api/conversations/:id/messages', async (req, res) => {
+    if (!(await ownerLevelCaller(req, res, "PugPort's own executors cannot send messages as the owner."))) return;
+    res.status(201).json({ ok: true });
+  });
+  app.get('/kind', async (req, res) => void res.json({ kind: await callerKind(req) }));
+  const server = createHttpServer(app);
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  const agent = new Agent({ keepAlive: true, maxSockets: 1 });
+  t.after(() => {
+    agent.destroy();
+    server.close();
+  });
+  const call = (method: string, path: string, headers: Record<string, string> = {}) =>
+    new Promise<{ status: number; retryAfter?: string; error?: string; code?: string }>((done, fail) => {
+      const req = request(
+        { host: '127.0.0.1', port: (server.address() as AddressInfo).port, path, method, agent, headers },
+        (res) => {
+          let body = '';
+          res.on('data', (chunk) => (body += chunk));
+          res.on('end', () =>
+            done({
+              status: res.statusCode!,
+              retryAfter: res.headers['retry-after'],
+              error: (JSON.parse(body) as { error?: string }).error,
+              code: (JSON.parse(body) as { code?: string }).code,
+            }),
+          );
+        },
+      );
+      req.on('error', fail);
+      req.end();
+    });
+  const guarded = [
+    ['POST', '/api/conversations/c1/work/lanes', 200],
+    ['PATCH', '/api/conversations/c1/work/lanes', 200],
+    ['DELETE', '/api/conversations/c1', 200],
+    ['POST', '/api/conversations/c1/messages', 201],
+  ] as const;
+  const fresh = () => agent.destroy();
+
+  // Not identified: refused for now, on every guarded write, and asked again each time on the same connection.
+  for (const failure of [undefined, 'throw', 'hang'] as const) {
+    next = failure;
+    fresh();
+    const before = lookups;
+    for (const [method, path] of guarded) {
+      const refused = await call(method, path);
+      assert.equal(refused.status, 503, `${String(failure)} ${method} ${path}`);
+      assert.equal(refused.retryAfter, String(callerUnknownRetrySeconds));
+      assert.equal(refused.error, callerUnknownError);
+      assert.equal(refused.code, 'caller-unknown', 'the code PugPort’s own clients resend on');
+    }
+    assert.equal(lookups - before, guarded.length, 'an unknown answer is never kept');
+    assert.equal((await call('GET', '/kind')).status, 200);
+  }
+  // The same connection is looked up again and, once identified, goes through.
+  next = false;
+  const before = lookups;
+  for (const [method, path, ok] of guarded) assert.equal((await call(method, path)).status, ok, path);
+  assert.equal(lookups - before, 1, 'a definite answer is kept for the connection');
+
+  // An identified executor keeps its 403, by lookup or by its own header.
+  next = true;
+  fresh();
+  for (const [method, path] of guarded) {
+    const refused = await call(method, path);
+    assert.equal(refused.status, 403, path);
+    assert.match(refused.error!, /own executors cannot (act|send messages) as the owner/);
+    assert.equal(refused.retryAfter, undefined);
+    assert.equal(refused.code, undefined, 'an executor is refused for good');
+  }
+  next = undefined;
+  fresh();
+  for (const [method, path] of guarded)
+    assert.equal((await call(method, path, { 'x-pugport-executor': '1' })).status, 403, path);
+
+  // The desktop window's owner value needs no lookup, and reads are never held up.
+  const asked = lookups;
+  for (const [method, path, ok] of guarded)
+    assert.equal((await call(method, path, { 'x-pugport-owner': 'synthetic-owner' })).status, ok, path);
+  assert.equal((await call('GET', '/api/conversations/c1/work/lanes')).status, 200);
+  assert.equal(lookups, asked);
 });
 
 test('a real loopback connection from this process is found with the system tools', async (t) => {

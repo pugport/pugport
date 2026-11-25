@@ -5,6 +5,7 @@ import type { InstaboxMonitor } from './instabox.ts';
 import { instaboxActionSchema } from './instabox.ts';
 import type { InstaboxSsh } from './instabox-ssh.ts';
 import { z } from 'zod';
+import { refuseUnknownCaller, type CallerKind } from './caller-identity.ts';
 import { servicePatternSchema, serviceUnitPattern, type PeerServerStatus } from './node/peer-protocol.ts';
 import { PeerRefused, PeerUnreachable } from './devices/peer-client.ts';
 import {
@@ -290,15 +291,18 @@ export class RemoteServerMonitor {
 export function remoteServerRoutes(
   app: Express,
   monitor: RemoteServerMonitor,
-  callerIsExecutor: (req: Request) => Promise<boolean> = async () => true,
+  callerKind: (req: Request) => Promise<CallerKind> = async () => 'executor',
 ) {
   app.get('/api/remote-servers', async (req, res) => {
     const { refresh } = z.object({ refresh: z.enum(['0', '1', 'instabox']).optional() }).parse(req.query);
     res.json(await monitor.view(refresh === 'instabox' ? 'instabox' : refresh === '1'));
   });
   app.post('/api/remote-servers/instabox/action', async (req, res) => {
-    if (!res.locals.owner || (await callerIsExecutor(req))) {
-      res.status(403).json({ error: 'Only the PugPort desktop window can do this.' });
+    // The owner value comes first; a holder that is an executor, or cannot be told apart from one, is still refused.
+    const caller = res.locals.owner ? await callerKind(req).catch((): CallerKind => 'unknown') : 'executor';
+    if (caller !== 'other') {
+      if (caller === 'unknown') refuseUnknownCaller(res);
+      else res.status(403).json({ error: 'Only the PugPort desktop window can do this.' });
       return;
     }
     if (!monitor.instabox) {
@@ -320,8 +324,11 @@ export function remoteServerRoutes(
     }
   });
   const owner = async (req: Request, res: import('express').Response) => {
-    if (!res.locals.owner || (await callerIsExecutor(req))) {
-      res.status(403).json({ error: 'Only the PugPort desktop window can do this.' });
+    // The owner value comes first; a holder that is an executor, or cannot be told apart from one, is still refused.
+    const caller = res.locals.owner ? await callerKind(req).catch((): CallerKind => 'unknown') : 'executor';
+    if (caller !== 'other') {
+      if (caller === 'unknown') refuseUnknownCaller(res);
+      else res.status(403).json({ error: 'Only the PugPort desktop window can do this.' });
       return false;
     }
     if (!monitor.instaboxSsh) {

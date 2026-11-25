@@ -29,7 +29,7 @@ test('Round 2 enrollment mutations refuse non-owners and executors before side e
         return {};
       },
     } as unknown as ServerEnrollments,
-    async (req) => req.headers['x-executor'] === 'yes',
+    async (req) => (req.headers['x-executor'] === 'yes' ? 'executor' : req.headers['x-executor'] ? 'unknown' : 'other'),
   );
   const server = createServer(app).listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -44,6 +44,14 @@ test('Round 2 enrollment mutations refuse non-owners and executors before side e
         });
         assert.equal(result.status, 403);
       }
+      // The owner value from a caller that cannot be identified is refused for now, not let through.
+      const unknown = await fetch(`${base}/api/remote-servers/${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-owner': 'yes', 'x-executor': 'unknown' },
+        body: JSON.stringify({ name: 'fixture', ...(path === 'disconnect' ? { purge: false } : {}) }),
+      });
+      assert.equal(unknown.status, 503);
+      assert.equal(unknown.headers.get('retry-after'), '2');
     }
     assert.deepEqual(calls, []);
     for (const path of ['enrollments', 'disconnect']) {

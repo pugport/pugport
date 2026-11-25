@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
+import { refuseUnknownCaller, type CallerKind } from './caller-identity.ts';
 import { deviceNameProblem, type DeviceView, type DevicesView } from '../shared/devices.ts';
 import type { NodeClient, NodeDeps } from '../cli/node.ts';
 import { currentHost, type Host } from './platform/host.ts';
@@ -374,11 +375,14 @@ export class ServerEnrollments {
 export function serverEnrollmentRoutes(
   app: Express,
   enrollments: ServerEnrollments,
-  callerIsExecutor: (req: Request) => Promise<boolean> = async () => true,
+  callerKind: (req: Request) => Promise<CallerKind> = async () => 'executor',
 ) {
   const owner = async (req: Request, res: Response) => {
-    if (!res.locals.owner || (await callerIsExecutor(req))) {
-      res.status(403).json({ error: 'Only the PugPort desktop window can do this.' });
+    // The owner value comes first; a holder that is an executor, or cannot be told apart from one, is still refused.
+    const caller = res.locals.owner ? await callerKind(req).catch((): CallerKind => 'unknown') : 'executor';
+    if (caller !== 'other') {
+      if (caller === 'unknown') refuseUnknownCaller(res);
+      else res.status(403).json({ error: 'Only the PugPort desktop window can do this.' });
       return false;
     }
     return true;
