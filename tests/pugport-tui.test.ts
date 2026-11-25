@@ -19,7 +19,7 @@ import { listenForFetch } from './helpers/fetch-port.ts';
 
 const plain = new Theme(false);
 const colored = new Theme(true, 'dark', 'truecolor');
-const text = (lines: string[]) => stripTerminalSequences(lines.join('\n'));
+const text = (lines: readonly string[]) => stripTerminalSequences(lines.join('\n'));
 
 /** An in-memory terminal: records what the TUI writes and lets the test type. */
 class FakeTerminal implements Terminal {

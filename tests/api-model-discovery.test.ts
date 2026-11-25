@@ -44,6 +44,12 @@ const unknowns: Record<string, string> = {
 };
 const targetFor = (id: string, suffix = '') =>
   apiTarget(process.cwd(), join(testDirectory(), id + suffix), apiPreset(id)!, `api-${id}${suffix}`, id);
+/**
+ * A catalog model the provider's own list can name. Pi's catalog order is not a contract, and OpenRouter's
+ * "~vendor/model-latest" aliases are not IDs discovery accepts.
+ */
+const knownModel = (target: ReturnType<typeof targetFor>) =>
+  apiCatalog(target).find((model) => /^[a-zA-Z0-9]/.test(model.id))!;
 const demand = { tier: 'strong' as const, effort: 'high', goal: 'quality' as const };
 
 test('OpenAI media picker enables chatgpt-image models while DALL-E stays unsupported', () => {
@@ -70,7 +76,7 @@ for (const id of providers)
   test(`${id}: official host, auth, chat filter, merge, cache and Pi config`, async (t) => {
     const target = { ...targetFor(id), apiBaseUrl: 'https://never-send-a-key.invalid' };
     const preset = apiPreset(id)!;
-    const known = apiCatalog(target)[0];
+    const known = knownModel(target);
     assert.ok(known);
     const unknown = unknowns[id];
     const rows = [
@@ -141,9 +147,10 @@ for (const id of providers)
     assert.deepEqual(readApiModelList(target)?.ids, [known.id, unknown]);
     const catalog = piModels({ models: apiCatalog(target) });
     const merged = mergeApiModels(target, catalog);
+    const knownId = `${preset.runtimeProvider}/${known.id}`;
     assert.deepEqual(
-      merged.find((model) => model.id === `${preset.runtimeProvider}/${known.id}`),
-      catalog[0],
+      merged.find((model) => model.id === knownId),
+      catalog.find((model) => model.id === knownId),
     );
     assert.equal(merged.length, catalog.length + 1, 'unlisted catalog models stay');
     const fresh = merged.at(-1)!;
@@ -387,7 +394,7 @@ test('providers outside discovery keep their existing model configuration', () =
 test('official retirement dates hide expired models and keep future, invalid or undocumented flags', async () => {
   for (const provider of ['openai', 'openrouter']) {
     const target = targetFor(provider, '-retired');
-    const known = apiCatalog(target)[0];
+    const known = knownModel(target);
     const prefix = provider === 'openai' ? 'gpt-' : 'synthetic/';
     const ids = ['expired', 'future', 'invalid', 'legacy', 'precedence'].map((id) => prefix + id);
     await refreshApiModelList(
@@ -410,7 +417,9 @@ test('official retirement dates hide expired models and keep future, invalid or 
     assert.deepEqual(readApiModelList(target)?.retired, [known.id, ids[0]]);
     assert.deepEqual(readApiModelList(target)?.ids, ids.slice(1));
     const catalog = piModels({ models: apiCatalog(target) });
-    assert.ok(!mergeApiModels(target, catalog).some((model) => model.id === catalog[0].id));
+    const knownId = `${apiPreset(provider)!.runtimeProvider}/${known.id}`;
+    assert.ok(catalog.some((model) => model.id === knownId));
+    assert.ok(!mergeApiModels(target, catalog).some((model) => model.id === knownId));
   }
 });
 
