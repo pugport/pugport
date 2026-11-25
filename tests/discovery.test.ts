@@ -372,8 +372,10 @@ test(
     writeFileSync(join(install, 'cursor-agent.ps1'), '[Console]::Out.WriteLine($args -join "|")\r\nexit 0\r\n');
     environment(t, { ...process.env, LOCALAPPDATA: localAppData, PATH: '' });
     assert.equal(findCursorExecutable(), command, 'prefer the installed launcher over PATH and directory matches');
+    // The wrapper starts through Windows PowerShell, which a cold or busy hosted runner can delay past ten seconds;
+    // the Cursor adapter's own metadata captures allow thirty.
     const result = await captureTarget({ ...target(command), id: 'cursor-native', provider: 'cursor' }, ['--version'], {
-      timeoutMs: 10_000,
+      timeoutMs: 30_000,
     });
     assert.equal(result.exitCode, 0);
     assert.equal(result.stdout.trim(), '--version');

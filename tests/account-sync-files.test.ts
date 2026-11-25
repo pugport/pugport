@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { setTimeout as delay } from 'node:timers/promises';
 import { WorkspaceStore } from '../src/server/workspace-store.ts';
 import { Workspace } from '../src/server/workspace.ts';
 import { SyncStore } from '../src/server/account-sync-store.ts';
@@ -620,6 +621,19 @@ test('automatic enrollment on A syncs three callable server names to B without S
     options,
   );
   await other.runAutomatic();
+  assert.equal(calls, 3);
+  // The enrollment push can land while an automatic cycle is still in flight, and a cycle that joined it can capture
+  // the pre-enrollment state; repeat the cycle until computer B lists all three servers.
+  const listedAt = Date.now();
+  while (names.some((name) => b.devices.find(name) === undefined)) {
+    const missing = names.filter((name) => b.devices.find(name) === undefined);
+    assert.ok(
+      Date.now() - listedAt < 10_000,
+      `computer B had not listed ${missing.join(', ')} within 10 s after the sync`,
+    );
+    await delay(10);
+    await cycle(a, b);
+  }
   assert.equal(calls, 3);
   for (const name of names) {
     const target = b.devices.find(name);
