@@ -545,7 +545,7 @@ export class ExternalAgents {
     else this.routineReplies.delete(messageId);
     const waiter = this.waiters.get(messageId);
     if (
-      waiter &&
+      typeof waiter === 'function' &&
       !agent.following &&
       (['done', 'failed', 'needs-user'].includes(agent.status) || agent.task?.polling === false)
     )
