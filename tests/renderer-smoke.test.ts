@@ -12,6 +12,7 @@ const checks: Record<string, RegExp> = {
   'coordinator-ui-renderer-smoke.cjs': /PASS coordinator UI renderer:/,
   'conversation-creation-renderer-smoke.cjs': /PASS Studio creation renderer/,
   'conversation-queue-renderer-smoke.cjs': /PASS queue renderer/,
+  'conversation-screenshots-renderer-smoke.cjs': /PASS conversation screenshots renderer:/,
   'conversation-timeline-renderer-smoke.cjs': /PASS timeline renderer/,
   'conversation-trace-renderer-smoke.cjs': /Conversation Trace renderer smoke passed/,
   'empty-composer-renderer-smoke.cjs': /PASS empty composer Enter/,
