@@ -23,6 +23,7 @@ import {
   grokBotUsagePage,
   grokBotUsageAgentId,
   grokBotHandoffNote,
+  canImportReply,
   type ExternalAgentId,
   type ExternalAgentMessage,
   type ExternalAgentView,
@@ -544,7 +545,7 @@ export class ExternalAgents {
     else this.routineReplies.delete(messageId);
     const waiter = this.waiters.get(messageId);
     if (
-      waiter &&
+      typeof waiter === 'function' &&
       !agent.following &&
       (['done', 'failed', 'needs-user'].includes(agent.status) || agent.task?.polling === false)
     )
@@ -715,8 +716,8 @@ export class ExternalAgents {
     const result = await postGrokRoutine(routine, this.packedRequest(message), replyId, this.options.routinePost);
     this.patch(messageId, (agent) => {
       if (result.runUuid) agent.routine!.runUuid = result.runUuid;
-      // A fast callback can arrive before the webhook response.
-      if (agent.routine?.replied) return;
+      // A fast callback (or the user's pasted answer) can arrive before the webhook response.
+      if (agent.routine?.replied || agent.importedAt) return;
       agent.status = result.ok ? 'working' : 'needs-user';
       agent.note = result.ok ? grokWaitingNote : result.note;
     });
@@ -732,6 +733,8 @@ export class ExternalAgents {
       .get(grokReplyHash(replyId)) as { value: string } | undefined;
     if (!row) return 404;
     const message = JSON.parse(row.value) as ConversationMessage;
+    // The user already pasted this run's answer: it is answered once.
+    if (message.externalAgent?.importedAt) return 200;
     const routine = message.externalAgent?.routine;
     if (
       !routine ||
@@ -839,10 +842,30 @@ export class ExternalAgents {
     this.patch(messageId, (agent, current) => {
       agent.status = 'done';
       agent.note = undefined;
+      agent.awaitingReply = true;
       delete agent.untrusted;
       delete agent.task;
       delete agent.handoff;
       current.content = grokBotHandoffNote;
+    });
+  }
+
+  /** The answer the user copied out of Grok Bot, attached to the request it answers. */
+  importReply(messageId: string, text: string) {
+    const agent = this.message(messageId).externalAgent;
+    if (!canImportReply(agent))
+      throw new Error(agent.importedAt || agent.routine?.replied ? '这条已经有回复了。' : '这条消息没有在等回复。');
+    const reply = text.replaceAll('\r\n', '\n').trim();
+    if (!reply) throw new Error('回复是空的。');
+    if (reply.length > 100_000) throw new Error('回复太长，最多 100000 个字符。');
+    this.patch(messageId, (current, message) => {
+      current.status = 'done';
+      current.importedAt = this.stamp();
+      // Grok Bot's words, whichever way they arrived.
+      current.untrusted = true;
+      delete current.awaitingReply;
+      delete current.note;
+      message.content = reply;
     });
   }
 
@@ -1629,6 +1652,7 @@ export class ExternalAgents {
     const agent = message.externalAgent;
     if (externalAgentCatalog[agent.agentId].kind === 'handoff') {
       if (this.isRunning(agent.agentId)) throw new Error('正在处理，请稍后重试。');
+      if (agent.importedAt) throw new Error('这条已经有回复了。');
       try {
         await this.sendDesktop(messageId);
       } catch {

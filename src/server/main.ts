@@ -413,6 +413,8 @@ app.use(ownerApiGuard(owner));
 webSearchRoutes(app, controller.webSearch);
 jevRoutes(app);
 app.post(grokReplyPath, express.json({ limit: '1mb' }));
+// A pasted Grok Bot answer is as long as a routine reply.
+app.post('/api/external-agents/messages/:messageId/import-reply', express.json({ limit: '1mb' }));
 // Keep parser errors on credential-bearing routes fixed, including malformed JSON and oversized bodies.
 app.put('/api/external-agents/grok-bot/routine', express.json({ limit: '16kb' }));
 app.use(

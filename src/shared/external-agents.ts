@@ -242,6 +242,10 @@ export type ExternalAgentMessage = {
   truncated?: boolean;
   /** Offer 「交给它」: copy the request and bring the agent's window to the front. */
   handoff?: boolean;
+  /** Handed off to the desktop app: the request went out, and its answer only comes back when the user pastes it. */
+  awaitingReply?: true;
+  /** When the user pasted the answer for this request; nothing else may answer it after that. */
+  importedAt?: string;
   /** Read-only fields retained for old Codex Cloud replies. */
   task?: {
     id?: string;
@@ -333,6 +337,17 @@ export function withoutMention(text: string, name: string): string {
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
 }
+
+/**
+ * Grok Bot got (or may have got) this exact request and PugPort has no answer for it: the user may paste the answer
+ * once. PugPort cannot read results inside Grok Bot, and never runs the request again to get one.
+ */
+export const canImportReply = (agent: ExternalAgentMessage) =>
+  agent.agentId === 'grok-bot' &&
+  !agent.importedAt &&
+  (agent.routine
+    ? !agent.routine.replied && (agent.status === 'working' || agent.status === 'needs-user')
+    : !!agent.awaitingReply && agent.status === 'done');
 
 export const isThirdPartyAgent = (agent: Pick<ExternalAgentView, 'kind' | 'routine'>) =>
   agent.kind === 'web' || !!agent.routine;

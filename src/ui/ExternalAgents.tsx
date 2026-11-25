@@ -11,7 +11,9 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ClipboardCopy,
+  ClipboardPaste,
   FileDiff,
+  Hourglass,
   Loader2,
   LogIn,
   RefreshCw,
@@ -36,6 +38,7 @@ import {
   type ExternalAgentId,
   type ExternalAgentView,
   grokBotHandoffNote,
+  canImportReply,
 } from '../shared/external-agents';
 import type { ConversationMessage } from '../shared/types';
 import type { Api, Notice } from './Workspace';
@@ -975,6 +978,8 @@ export function ExternalReplyPanel({
   onManageConnectors?: (focusId?: string) => void;
 }) {
   const [busy, setBusy] = useState('');
+  const [pasting, setPasting] = useState(false);
+  const [pasted, setPasted] = useState('');
   const agent = message.externalAgent;
   const task = agent?.task;
   // Old Codex Cloud replies retain their saved diff, without any live actions.
@@ -993,6 +998,7 @@ export function ExternalReplyPanel({
   const web = kind === 'web' || kind === 'handoff';
   const working = !agent.following && (agent.status === 'queued' || agent.status === 'working');
   const ended = agent.status === 'failed' || agent.status === 'needs-user';
+  const importable = !!api && canImportReply(agent);
   const act = async (action: string, body: Record<string, unknown> = {}) => {
     if (busy || !api) return;
     setBusy(action);
@@ -1019,6 +1025,18 @@ export function ExternalReplyPanel({
             : (agent.note ?? (agent.status === 'queued' ? '排队中…' : working ? '处理中…' : message.content))}
         </p>
       )}
+      {importable && !agent.routine && (
+        <p className="external-reply-note">
+          <Hourglass size={12} aria-hidden="true" />
+          已交接，等你带回回复
+        </p>
+      )}
+      {agent.importedAt && (
+        <p className="external-reply-note">
+          <ClipboardPaste size={12} aria-hidden="true" />
+          这条回复由你从 Grok Bot 复制过来。
+        </p>
+      )}
       {agent.untrusted && (agent.status === 'done' || agent.following) && (
         <p className="external-reply-trust">
           <ShieldAlert size={12} aria-hidden="true" />
@@ -1038,8 +1056,43 @@ export function ExternalReplyPanel({
           {task.applied.output ? <pre>{task.applied.output}</pre> : <small>（没有输出）</small>}
         </details>
       )}
+      {importable && pasting && (
+        <div className="external-reply-import">
+          <p>
+            {agent.routine
+              ? 'PugPort 没收到这次例程的回复，也读不到 Grok Bot 里的结果。到 Grok Bot 里复制这次任务的最终答案，粘贴到这里。只能附上一次，任务不会重新运行。'
+              : '到 Grok Bot 里复制它对这条消息的回复，粘贴到这里。只能附上一次。'}
+          </p>
+          <textarea
+            rows={5}
+            value={pasted}
+            aria-label="Grok Bot 的回复"
+            placeholder="粘贴 Grok Bot 的回复"
+            onChange={(event) => setPasted(event.target.value)}
+          />
+          <div className="external-reply-actions">
+            <button
+              type="button"
+              className="button tiny"
+              disabled={!!busy || !pasted.trim()}
+              onClick={() => void act('import-reply', { text: pasted })}
+            >
+              {spinner('import-reply')}附到这条消息
+            </button>
+            <button type="button" className="button tiny quiet" disabled={!!busy} onClick={() => setPasting(false)}>
+              取消
+            </button>
+          </div>
+        </div>
+      )}
       {api && (
         <div className="external-reply-actions">
+          {importable && !pasting && (
+            <button type="button" className="button tiny quiet" onClick={() => setPasting(true)}>
+              <ClipboardPaste size={12} aria-hidden="true" />
+              粘贴回复
+            </button>
+          )}
           {agent.agentId === 'grok-bot' && agent.handoff && !agent.routine && onManageConnectors && (
             <button type="button" className="button tiny quiet" onClick={() => onManageConnectors('grok-bot')}>
               设置例程，让回复回到 PugPort

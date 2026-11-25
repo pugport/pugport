@@ -1154,6 +1154,7 @@ test('reopen restores only the last successful explicit external call and respec
     'working',
     'needs-user',
     'handoff-only',
+    'pasted',
     'wrong-agent',
     'no-pick',
     'draft',
@@ -1171,7 +1172,9 @@ test('reopen restores only the last successful explicit external call and respec
         history[1].externalAgent.agentId = 'codex-cloud';
         history[1].externalAgent.name = 'Codex Cloud';
       }
-      if (scenario === 'handoff-only') delete history[1].externalAgent.routine;
+      if (scenario === 'handoff-only' || scenario === 'pasted') delete history[1].externalAgent.routine;
+      // A handoff whose answer the user pasted back is an answer from Grok Bot too.
+      if (scenario === 'pasted') history[1].externalAgent.importedAt = stamp;
       if (scenario === 'no-pick') history.push({ ...history[0], id: 'new', externalRequest: undefined });
       if (scenario === 'draft') session.changeDraft('conversation:a', () => ({ ...emptyDraft(), content: 'Unsent' }));
       if (scenario === 'cleared') session.changeDraft('conversation:a', emptyDraft);
@@ -1185,7 +1188,7 @@ test('reopen restores only the last successful explicit external call and respec
       await nextTurn();
       view.render();
       const restored = session.getSnapshot().drafts['conversation:a'];
-      assert.equal(restored?.called?.[0]?.id, scenario === 'done' ? 'grok-bot' : undefined);
+      assert.equal(restored?.called?.[0]?.id, scenario === 'done' || scenario === 'pasted' ? 'grok-bot' : undefined);
       if (scenario === 'done') {
         view.node((node) => node.props['aria-label'] === '不叫 Grok Bot').props.onClick();
         view.render();

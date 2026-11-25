@@ -86,6 +86,14 @@ export function externalAgentRoutes(app: Express, agents: ExternalAgents, listen
     agents.stopFollowing(messageId.parse(req.params.messageId));
     res.json({ ok: true });
   });
+  app.post('/api/external-agents/messages/:messageId/import-reply', (req, res) => {
+    const body = z
+      .object({ text: z.string().max(200_000) })
+      .strict()
+      .parse(req.body);
+    agents.importReply(messageId.parse(req.params.messageId), body.text);
+    res.json({ ok: true });
+  });
   app.post('/api/external-agents/messages/:messageId/handoff', async (req, res) => {
     await agents.handoff(messageId.parse(req.params.messageId));
     res.json({ ok: true });

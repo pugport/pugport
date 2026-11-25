@@ -17,7 +17,7 @@ import {
   participantIdentity,
   participantStyle,
 } from '../src/ui/ParticipantReply.tsx';
-import type { ExternalAgentView } from '../src/shared/external-agents.ts';
+import { grokBotHandoffNote, type ExternalAgentView } from '../src/shared/external-agents.ts';
 import type { AppState, ConversationMessage, Workflow } from '../src/shared/types.ts';
 import { findNode, nextTurn, text, uiBundle, uiHarness } from './helpers/ui-harness.ts';
 
@@ -688,6 +688,72 @@ test('a web agent reply: third-party label when done; retry and hand-off when it
     '/api/external-agents/messages/6f9619ff-8b86-4d11-b42d-00c04fc964ff/retry',
   ]);
   h.unmount();
+});
+
+test('a Grok Bot reply PugPort never received is pasted back once, from a form that can be cancelled', async () => {
+  const calls: { path: string; body: unknown }[] = [];
+  const api = async (path: string, body: unknown) => {
+    calls.push({ path, body });
+    return { ok: true };
+  };
+  const base = { agentId: 'grok-bot' as const, name: 'Grok Bot', request: '你好', updatedAt: 'x' };
+  const textarea = (tree: unknown) => findNode(tree, (node) => node.type === 'textarea');
+  const handedOff = { ...reply({ ...base, status: 'done', awaitingReply: true }), content: grokBotHandoffNote };
+  assert.equal(externalReplyIsNotice(handedOff), true, 'a handoff is a notice, not an answer');
+  const h = uiHarness(cardCode);
+  const props = { api, notify() {}, message: handedOff };
+  let tree = h.render('ExternalReplyPanel', props);
+  assert.match(text(tree), /已交接，等你带回回复/);
+  assert.equal(textarea(tree), undefined);
+  button(tree, '粘贴回复')!.props.onClick();
+  tree = h.render('ExternalReplyPanel', props);
+  assert.match(text(tree), /复制它对这条消息的回复.*只能附上一次/);
+  assert.equal(button(tree, '附到这条消息')!.props.disabled, true, 'nothing pasted yet');
+  button(tree, '取消')!.props.onClick();
+  tree = h.render('ExternalReplyPanel', props);
+  assert.equal(textarea(tree), undefined);
+  button(tree, '粘贴回复')!.props.onClick();
+  tree = h.render('ExternalReplyPanel', props);
+  textarea(tree)!.props.onChange({ target: { value: '合成回复' } });
+  tree = h.render('ExternalReplyPanel', props);
+  await button(tree, '附到这条消息')!.props.onClick();
+  await nextTurn();
+  assert.deepEqual(plain(calls), [
+    {
+      path: '/api/external-agents/messages/6f9619ff-8b86-4d11-b42d-00c04fc964ff/import-reply',
+      body: { text: '合成回复' },
+    },
+  ]);
+  h.unmount();
+
+  // A routine whose reply never arrived says what is missing; a pasted answer says where it came from.
+  const routine = { replyHash: 'synthetic', sentAt: 'x' };
+  const waiting = uiHarness(cardCode);
+  const waitingProps = { api, notify() {}, message: reply({ ...base, status: 'needs-user', routine }) };
+  button(waiting.render('ExternalReplyPanel', waitingProps), '粘贴回复')!.props.onClick();
+  const explained = text(waiting.render('ExternalReplyPanel', waitingProps));
+  assert.match(explained, /读不到 Grok Bot 里的结果/);
+  assert.match(explained, /任务不会重新运行/);
+  assert.doesNotMatch(explained, /已交接/);
+  waiting.unmount();
+  const pasted = uiHarness(cardCode).render('ExternalReplyPanel', {
+    api,
+    notify() {},
+    message: reply({ ...base, status: 'done', untrusted: true, importedAt: 'x', routine }),
+  });
+  assert.match(text(pasted), /由你从 Grok Bot 复制过来/);
+  assert.match(text(pasted), /第三方回复/);
+  // Nothing reached Grok Bot after a failed or stopped handoff: retry and hand off again, no paste.
+  const failed = uiHarness(cardCode).render('ExternalReplyPanel', {
+    api,
+    notify() {},
+    message: reply({ ...base, status: 'failed', handoff: true }),
+  });
+  assert.equal(button(pasted, '粘贴回复'), undefined);
+  assert.equal(button(failed, '粘贴回复'), undefined);
+  assert.ok(button(failed, '重试'));
+  assert.ok(button(failed, '交给它'));
+  assert.equal(calls.length, 1);
 });
 
 test('a following reply keeps its body and trust note visible and offers stop following', async () => {

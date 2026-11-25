@@ -81,8 +81,8 @@ export function draftFromHistory(messages: ConversationMessage[], workflows: Wor
       (message) =>
         message.externalAgent?.agentId === external &&
         message.externalAgent.status === 'done' &&
-        // Desktop handoff also records done; only a routine reply is an answer from Grok Bot.
-        (external !== 'grok-bot' || message.externalAgent.routine?.replied),
+        // Desktop handoff also records done; only a routine reply or a pasted one is an answer from Grok Bot.
+        (external !== 'grok-bot' || message.externalAgent.routine?.replied || !!message.externalAgent.importedAt),
     );
     if (reply)
       return {
