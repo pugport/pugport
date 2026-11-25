@@ -153,7 +153,7 @@ export async function probeFreeSource(
         if (/(?:embed|tts|whisper|transcrib|audio|realtime|image|dall-e|moderation|sora)/i.test(id)) continue;
         if (preset.id === 'openai' && /instruct/i.test(id)) continue;
         if (Array.isArray(item.output_modalities) && !item.output_modalities.includes('text')) continue;
-        if (preset.id === 'openai' && !/^(?:gpt-|chatgpt-|o\d)/.test(id)) continue;
+        if (preset.id === 'openai' && !/^(?:gpt-|chatgpt-|chat-|o\d)/.test(id)) continue;
         if (preset.id === 'deepseek' && !id.startsWith('deepseek-')) continue;
         if (preset.id.startsWith('moonshot') && !/^(?:moonshot-|kimi-)/.test(id)) continue;
         if (discovery === 'anthropic' && !id.startsWith('claude-')) continue;
