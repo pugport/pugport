@@ -44,8 +44,8 @@ function profile(model: ModelInfo, provider: Provider): Profile {
   const label = model.label.toLowerCase().replace(/\[[^\]]*\]/g, '');
   const identify = (text: string) => {
     const word = (pattern: string) => new RegExp(`(?:^|[^a-z0-9])(${pattern})(?=$|[^a-z0-9])`, 'i').exec(text)?.[1];
-    // Gemini 4 names its models after elements; only its known flagship counts as strong.
-    const strong = word('astra|opus|fable|heavy') || (/gemini/i.test(id) ? word('pro|argon') : undefined);
+    // Gemini 4 names its models after elements; only the ones Google lists as flagship reasoning count as strong (#53).
+    const strong = word('astra|opus|fable|heavy') || (/gemini/i.test(id) ? word('pro|argon|carbon|neon') : undefined);
     const light =
       word('luna|haiku|mini|nano|flash|lite|small') || (provider !== 'cursor' && /grok/i.test(id) && word('fast'));
     const standard = word('sol|terra|sonnet|composer') || (/grok/i.test(text) ? 'grok' : undefined);

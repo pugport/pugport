@@ -185,6 +185,7 @@ test('the Cursor picker labels billing pools without changing exact CLI model sl
   assert.equal(cursorModelPool('cursor-grok-4.6-high'), 'cursor');
   assert.equal(cursorModelPool('gpt-5.6-luna-low'), 'other');
   assert.equal(cursorModelPool('gemini-4-argon'), 'other');
+  assert.equal(cursorModelPool('gemini-4-carbon'), 'other');
   assert.equal(cursorModelPool('grok-4.70-high'), 'dynamic');
   assert.equal(cursorModelPool('future-model'), 'dynamic');
 });
