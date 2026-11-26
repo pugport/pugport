@@ -97,17 +97,17 @@ const specs = [
   },
   {
     name: '@rolldown/binding-win32-x64-msvc',
-    version: '1.2.11',
-    directory: 'rolldown-binding-1.2.11',
-    upstreamCommit: '8df421985114ecfaf52cce038d4a5a6ea8c05408',
+    version: '1.2.19',
+    directory: 'rolldown-binding-1.2.19',
+    upstreamCommit: 'b9c75ddc8bd50f2c1a4c7be0b548bdab5cba85ab',
     basis:
       'npm release provenance identifies this source commit. Its full original MIT license and original THIRD-PARTY-LICENSE are retained unchanged. This is a development-only native binding, excluded from PugPort Windows runtime packaging.',
     mode: 'upstream',
     licenseUrls: [
-      raw('rolldown/rolldown', '8df421985114ecfaf52cce038d4a5a6ea8c05408', 'LICENSE'),
-      raw('rolldown/rolldown', '8df421985114ecfaf52cce038d4a5a6ea8c05408', 'THIRD-PARTY-LICENSE'),
+      raw('rolldown/rolldown', 'b9c75ddc8bd50f2c1a4c7be0b548bdab5cba85ab', 'LICENSE'),
+      raw('rolldown/rolldown', 'b9c75ddc8bd50f2c1a4c7be0b548bdab5cba85ab', 'THIRD-PARTY-LICENSE'),
     ],
-    attestationUrl: 'https://registry.npmjs.org/-/npm/v1/attestations/@rolldown%2fbinding-win32-x64-msvc@1.2.11',
+    attestationUrl: 'https://registry.npmjs.org/-/npm/v1/attestations/@rolldown%2fbinding-win32-x64-msvc@1.2.19',
   },
 ];
 const manifestPath = join(root, 'docs/NPM-LICENSE-SUPPLEMENTS.json');

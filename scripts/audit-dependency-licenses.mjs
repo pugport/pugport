@@ -23,7 +23,7 @@ for (const component of supplementManifest.components) {
   supplements.set(`${component.name}@${component.version}`, component);
 }
 const piPackages = new Set(
-  ['pi-coding-agent', 'pi-agent-core', 'pi-ai', 'pi-codemode', 'pi-mcp', 'pi-telemetry', 'pi-tui'].map(
+  ['pi-coding-agent', 'pi-agent-core', 'pi-ai', 'pi-codemode', 'pi-mcp', 'pi-schema', 'pi-telemetry', 'pi-tui'].map(
     (name) => `@earendil-works/${name}`,
   ),
 );
@@ -36,9 +36,9 @@ const supplemental = (name, item) => {
       throw new Error(`Supplement does not match locked package identity: ${name}`);
     return [...component.licenseFiles.map((file) => file.path), component.attributionFile.path];
   }
-  return piPackages.has(name) && item.version === '1.4.0' && item.license === 'MIT'
-    ? ['THIRD_PARTY_NOTICES.md#pi-140-mit-license-text']
-    : name === 'standardwebhooks' && item.version === '1.1.1' && item.license === 'MIT'
+  return piPackages.has(name) && item.version === '1.6.0' && item.license === 'MIT'
+    ? ['licenses/Pi-MIT.txt']
+    : name === 'standardwebhooks' && item.version === '1.3.0' && item.license === 'MIT'
       ? ['licenses/StandardWebhooks-MIT.txt']
       : name.startsWith('@aws-sdk/') && item.license === 'Apache-2.0'
         ? ['licenses/AWS-SDK-JS-Apache-2.0.txt']

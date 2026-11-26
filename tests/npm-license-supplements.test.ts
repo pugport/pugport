@@ -70,7 +70,7 @@ test('license audit rejects edited license text instead of treating a path as pr
 });
 
 test('third-party notices retain the Pi MIT heading', () => {
-  assert.match(readFileSync(join(root, 'THIRD_PARTY_NOTICES.md'), 'utf8'), /^## Pi 1\.4\.0 MIT license text$/m);
+  assert.match(readFileSync(join(root, 'THIRD_PARTY_NOTICES.md'), 'utf8'), /^## Pi 1\.6\.0 MIT license text$/m);
 });
 
 test('license audit rejects changed package integrity and unreviewed production gaps', () => {

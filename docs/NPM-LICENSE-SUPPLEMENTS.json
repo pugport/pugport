@@ -26,9 +26,9 @@
       ],
       "attributionFile": {
         "path": "licenses/npm/data-uri-to-buffer-4.0.1/ATTRIBUTION.md",
-        "sha256": "95750becb57a852fc77a6287e16d1829af40b1fc6dd66a4b826c240ac632a8d2",
+        "sha256": "61f17b620f72308202baf5cd1e9e589591c87fafc37874c62e271bbd1dfa1683",
         "sourceUrl": "https://registry.npmjs.org/data-uri-to-buffer/-/data-uri-to-buffer-4.0.1.tgz",
-        "origin": "ComboRunner distribution attribution note; source license text is kept in separate files."
+        "origin": "PugPort distribution attribution note; source license text is kept in separate files."
       },
       "evidence": [
         {
@@ -73,9 +73,9 @@
       ],
       "attributionFile": {
         "path": "licenses/npm/proxy-agent-negotiate-1.1.0/ATTRIBUTION.md",
-        "sha256": "734feb0e875cd3c59a3527a95ead2de1eeba2099205f16c58fc8165d365f98f0",
+        "sha256": "851d2ee907927d798e63b763df606ee17c3ab4cc0ceb80afb125b961d2d8d933",
         "sourceUrl": "https://registry.npmjs.org/proxy-agent-negotiate/-/proxy-agent-negotiate-1.1.0.tgz",
-        "origin": "ComboRunner distribution attribution note; source license text is kept in separate files."
+        "origin": "PugPort distribution attribution note; source license text is kept in separate files."
       },
       "evidence": [
         {
@@ -120,9 +120,9 @@
       ],
       "attributionFile": {
         "path": "licenses/npm/electron-extract-zip-1.0.5/ATTRIBUTION.md",
-        "sha256": "7a0bb344bbd9045b915241cd1030b2cde812a82eb92e546e67584d77d8f34646",
+        "sha256": "7f703913ba546f7a4b68df3f59a2c616d0bc1c8cdb527656617d2c803db6391f",
         "sourceUrl": "https://registry.npmjs.org/@electron-internal/extract-zip/-/extract-zip-1.0.5.tgz",
-        "origin": "ComboRunner distribution attribution note; source license text is kept in separate files."
+        "origin": "PugPort distribution attribution note; source license text is kept in separate files."
       },
       "evidence": [
         {
@@ -171,9 +171,9 @@
       ],
       "attributionFile": {
         "path": "licenses/npm/err-code-2.0.3/ATTRIBUTION.md",
-        "sha256": "d76a63e6379e8b9835ab85a9dd458886eb4eb7271c2b29f8bb460a8719785d26",
+        "sha256": "fdb76579aea3509015301e527f2f661d6af0dda55f2d05621d56e1984d0312f2",
         "sourceUrl": "https://registry.npmjs.org/err-code/-/err-code-2.0.3.tgz",
-        "origin": "ComboRunner distribution attribution note; source license text is kept in separate files."
+        "origin": "PugPort distribution attribution note; source license text is kept in separate files."
       },
       "evidence": [
         {
@@ -191,46 +191,46 @@
     },
     {
       "name": "@rolldown/binding-win32-x64-msvc",
-      "version": "1.2.11",
+      "version": "1.2.19",
       "declaredLicense": "MIT",
       "developmentOnly": true,
       "packagePaths": [
         "node_modules/@rolldown/binding-win32-x64-msvc"
       ],
-      "packageIntegrity": "sha512-/PzKqzAJ03i19oy2ItPvyvaVjOjBCNnfaJs8yvUdGBKmiESgnrJSQ2awd81QzFbbnAmu7YO9ZnJrDCb9VSJPRA==",
-      "tarballUrl": "https://registry.npmjs.org/@rolldown/binding-win32-x64-msvc/-/binding-win32-x64-msvc-1.2.11.tgz",
-      "tarballSha256": "b1c2305986ec4a7dd6e03f883d118dac96cd5c3d02970634a28041c31d8a6596",
-      "upstreamCommit": "8df421985114ecfaf52cce038d4a5a6ea8c05408",
-      "basis": "npm release provenance identifies this source commit. Its full original MIT license and original THIRD-PARTY-LICENSE are retained unchanged. This is a development-only native binding, excluded from ComboRunner Windows runtime packaging.",
+      "packageIntegrity": "sha512-y/sqRRc6d7hECzOFc5n3LSeqctmIp9mMjY1Kq4s14uLPd/LZ4z7i1zrW6fMtp2mPeuQIC4e6ULMcwQzMomqQag==",
+      "tarballUrl": "https://registry.npmjs.org/@rolldown/binding-win32-x64-msvc/-/binding-win32-x64-msvc-1.2.19.tgz",
+      "tarballSha256": "a84c57e86c32f0dcf36b8c5591782315972e2cfd18cba3e1a9c64db24a266cd6",
+      "upstreamCommit": "b9c75ddc8bd50f2c1a4c7be0b548bdab5cba85ab",
+      "basis": "npm release provenance identifies this source commit. Its full original MIT license and original THIRD-PARTY-LICENSE are retained unchanged. This is a development-only native binding, excluded from PugPort Windows runtime packaging.",
       "licenseFiles": [
         {
-          "path": "licenses/npm/rolldown-binding-1.2.11/LICENSE.txt",
+          "path": "licenses/npm/rolldown-binding-1.2.19/LICENSE.txt",
           "sha256": "23ecfff35a5a2e80d92142f75228912c3b1abc4b5a8337a821ff4397e2f9f734",
-          "sourceUrl": "https://raw.githubusercontent.com/rolldown/rolldown/8df421985114ecfaf52cce038d4a5a6ea8c05408/LICENSE"
+          "sourceUrl": "https://raw.githubusercontent.com/rolldown/rolldown/b9c75ddc8bd50f2c1a4c7be0b548bdab5cba85ab/LICENSE"
         },
         {
-          "path": "licenses/npm/rolldown-binding-1.2.11/THIRD-PARTY-LICENSE.txt",
+          "path": "licenses/npm/rolldown-binding-1.2.19/THIRD-PARTY-LICENSE.txt",
           "sha256": "a877291d800ed43692f3f9ae09d8e01cc6f7293ad39d43896059c188ffbb8b7c",
-          "sourceUrl": "https://raw.githubusercontent.com/rolldown/rolldown/8df421985114ecfaf52cce038d4a5a6ea8c05408/THIRD-PARTY-LICENSE"
+          "sourceUrl": "https://raw.githubusercontent.com/rolldown/rolldown/b9c75ddc8bd50f2c1a4c7be0b548bdab5cba85ab/THIRD-PARTY-LICENSE"
         }
       ],
       "attributionFile": {
-        "path": "licenses/npm/rolldown-binding-1.2.11/ATTRIBUTION.md",
-        "sha256": "a8344788d4a3c8bdee17e7844d264f318bae6c38dd66d1052c40bbe437a76f1d",
-        "sourceUrl": "https://registry.npmjs.org/@rolldown/binding-win32-x64-msvc/-/binding-win32-x64-msvc-1.2.11.tgz",
-        "origin": "ComboRunner distribution attribution note; source license text is kept in separate files."
+        "path": "licenses/npm/rolldown-binding-1.2.19/ATTRIBUTION.md",
+        "sha256": "273f44fdd145d1518548edc494ae5dd78e475a0d20e3103de2a678845c99527f",
+        "sourceUrl": "https://registry.npmjs.org/@rolldown/binding-win32-x64-msvc/-/binding-win32-x64-msvc-1.2.19.tgz",
+        "origin": "PugPort distribution attribution note; source license text is kept in separate files."
       },
       "evidence": [
         {
-          "path": "licenses/npm/rolldown-binding-1.2.11/upstream-package.json",
-          "sha256": "6c98310bbd4c636e8d3f8fcf18a56e7f9dbf7ce6981bc3292d501adaad631a6e",
-          "sourceUrl": "https://registry.npmjs.org/@rolldown/binding-win32-x64-msvc/-/binding-win32-x64-msvc-1.2.11.tgz",
+          "path": "licenses/npm/rolldown-binding-1.2.19/upstream-package.json",
+          "sha256": "f7f54af48c8268c4401471b4a0c6e9947671cb6f232b319c01ef15d0fc2d5d8c",
+          "sourceUrl": "https://registry.npmjs.org/@rolldown/binding-win32-x64-msvc/-/binding-win32-x64-msvc-1.2.19.tgz",
           "archiveEntry": "package/package.json"
         },
         {
-          "path": "licenses/npm/rolldown-binding-1.2.11/npm-provenance-statement.json",
-          "sha256": "5d951cb189f66d9a769cb62902f6951bad27efd99231865e3094c216a6d2b1af",
-          "sourceUrl": "https://registry.npmjs.org/-/npm/v1/attestations/@rolldown%2fbinding-win32-x64-msvc@1.2.11",
+          "path": "licenses/npm/rolldown-binding-1.2.19/npm-provenance-statement.json",
+          "sha256": "21ab319ada8ca07abc6a76f82645aa0bfc1998a2c96cc668eafec8e285092482",
+          "sourceUrl": "https://registry.npmjs.org/-/npm/v1/attestations/@rolldown%2fbinding-win32-x64-msvc@1.2.19",
           "extraction": "Decoded SLSA dsseEnvelope.payload; provenance source recorded, no claim of independent signature verification."
         }
       ]

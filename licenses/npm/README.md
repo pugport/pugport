@@ -8,7 +8,7 @@
 | proxy-agent-negotiate 1.1.0（运行依赖） | 准确发布包明确声明 MIT 和作者 Nathan Rajlich，但没有独立许可全文。保留原始 package.json、固定发布源码及 npm provenance 陈述，并附 SPDX 官方 MIT 标准全文；没有冒充上游原 LICENSE，也没有编造版权年份。 |
 | @electron-internal/extract-zip 1.0.5（开发依赖） | 准确发布包与 README 明确声明 BSD-2-Clause，但缺全文。保留原始声明及 SPDX 官方 BSD-2-Clause 标准全文。上游紧邻后续提交只更改许可材料，将作品许可为 MIT；该原始 MIT 和变更记录也保留为来源证据，但这里不把锁定版本的 BSD 字段偷偷改成 MIT。 |
 | err-code 2.0.3（开发依赖） | 准确发布包声明 MIT、作者 IndigoUnited，README 明确链接 MIT 授权；附完整 SPDX MIT 标准全文及原始声明，不添加不存在的上游版权年份。 |
-| @rolldown/binding-win32-x64-msvc 1.2.11（开发依赖） | 按 npm 发布 provenance 指向的固定 commit 保存原始 LICENSE 和 THIRD-PARTY-LICENSE，包括 VoidZero、Rollup、esbuild 的声明。 |
+| @rolldown/binding-win32-x64-msvc 1.2.19（开发依赖） | 按 npm 发布 provenance 指向的固定 commit 保存原始 LICENSE 和 THIRD-PARTY-LICENSE，包括 VoidZero、Rollup、esbuild 的声明。 |
 
 **标准文本不是伪造的上游原文。** `*-standard.txt` 来自 SPDX 官方 license-list-data v3.26.0，模板中的占位符原样保存；具体包身份、作者元数据、授权名称来自各目录的 `upstream-package.json`、原始 README 和 `ATTRIBUTION.md`。未找到的上游版权通知不会凭空补写。原文与本项目编写的说明分开放置。
 

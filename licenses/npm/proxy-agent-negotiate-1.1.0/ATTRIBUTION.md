@@ -10,4 +10,4 @@ Source revision: b7e5f7ccce1a3ac5b339cc4c587974e8989cbc16.
 
 The original package metadata is preserved in upstream-package.json. Full terms are in MIT-standard.txt. SPDX template placeholders, if present, are intentionally preserved; they are not missing project configuration fields.
 
-This supplement records the existing grant and supplied attribution; ComboRunner does not relicense the dependency or claim its authorship.
+This supplement records the existing grant and supplied attribution; PugPort does not relicense the dependency or claim its authorship.
