@@ -11,8 +11,15 @@ test('Gemini API model profiles retain their tiers', () => {
     ['gemini-3.1-flash-lite', 'light'],
     ['gemini-4-argon', 'strong'],
     ['google/gemini-4-argon', 'strong'],
+    ['gemini-4-carbon', 'strong'],
+    ['google/gemini-4-carbon', 'strong'],
+    ['gemini-4-neon', 'strong'],
+    ['google/gemini-4-neon', 'strong'],
+    // Google's default general-purpose model, not a flagship.
+    ['gemini-4-hydrogen', 'standard'],
+    ['google/gemini-4-hydrogen', 'standard'],
     // An element name PugPort has not been told about stays conservative.
-    ['gemini-4-neon', 'standard'],
+    ['gemini-4-krypton', 'standard'],
     ['auto', 'standard'],
   ])
     assert.equal(modelTier(model(id!), 'pi'), tier);
