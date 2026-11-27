@@ -62,7 +62,14 @@ API models cover OpenAI, Anthropic, Google Gemini, DeepSeek, xAI, Kimi, GLM, Qwe
 
 ## Quick start
 
-**Download:** the [Windows installer and Mac app](https://pugport.com/#download) (version 0.0.39, with in-app updates), or build from source below.
+**Download:** the [Windows installer and Mac app](https://pugport.com/#download) (version 0.0.40, with in-app updates), or build from source below.
+
+**First launch.** Neither download is signed by a recognised publisher yet, so each system stops the first launch once:
+
+- **Windows:** if SmartScreen says the installer is from an unknown publisher, choose **More info**, then **Run anyway**.
+- **Mac:** unzip the download, move PugPort to Applications and open it. macOS says it could not verify PugPort; close that message without moving PugPort to the Trash. Then open **System Settings → Privacy & Security**, choose **Open Anyway** next to PugPort and confirm. The button appears only after you have tried to open PugPort. If macOS instead says PugPort is damaged and offers no **Open Anyway**, run `xattr -dr com.apple.quarantine /Applications/PugPort.app` in Terminal and open it again.
+
+Updates installed from inside PugPort do not need this again.
 
 You need at least one executor: Claude Code, Codex CLI, Grok CLI or Cursor CLI signed in, or an API key. Claude Code on Windows also needs Git for Windows.
 
@@ -90,7 +97,7 @@ Closing the window keeps PugPort in the tray so queued work keeps running; choos
 
 ## Status
 
-Early development. Version 0.0.39 runs on Windows x64 and Apple silicon Macs, with in-app updates; download it from [pugport.com](https://pugport.com/#download). The Windows installer is not code-signed yet and the Mac app is not notarized yet, so each system asks you to confirm the first launch; Windows also builds a portable ZIP for review builds. The Mac release is an Apple Silicon (arm64) build that is ad-hoc signed and updates itself from the signed feed; Intel Mac acceptance has not been performed. Release instructions are in [Windows releases](docs/RELEASING-WINDOWS.md) and [Mac releases](docs/RELEASING-MAC.md); release notes are on the [dev log](https://pugport.dev); see also [platform support](docs/PLATFORMS.md). PugPort was called ComboRunner until October 2026; existing data, settings and chats carry over.
+Early development. Version 0.0.40 runs on Windows x64 and Apple silicon Macs, with in-app updates; download it from [pugport.com](https://pugport.com/#download). The Windows installer is not code-signed yet, and the Mac app has no Apple Developer ID signature or notarization yet, so the first launch needs one extra step on each system ([first launch](#quick-start)); Windows also builds a portable ZIP for review builds. The Mac release is an Apple Silicon (arm64) build that is ad-hoc signed and updates itself from the signed feed; Intel Mac acceptance has not been performed. Release instructions are in [Windows releases](docs/RELEASING-WINDOWS.md) and [Mac releases](docs/RELEASING-MAC.md); release notes are on the [dev log](https://pugport.dev); see also [platform support](docs/PLATFORMS.md). PugPort was called ComboRunner until October 2026; existing data, settings and chats carry over.
 
 ## Websites
 
